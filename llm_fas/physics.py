@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import math
+
+import torch
+
+
+def dbm_to_watt(dbm: float) -> float:
+    return 10.0 ** ((dbm - 30.0) / 10.0)
+
+
+def noise_power_watt(noise_psd_dBm_per_Hz: float, bandwidth_Hz: float) -> float:
+    noise_dbm = noise_psd_dBm_per_Hz + 10.0 * math.log10(bandwidth_Hz)
+    return dbm_to_watt(noise_dbm)
+
+
+def path_loss_beta(distance_km: float) -> float:
+    path_loss_db = 128.1 + 37.6 * math.log10(distance_km)
+    return 10.0 ** (-path_loss_db / 10.0)
+
+
+def port_coordinates(Nx: int, Ny: int) -> list[tuple[int, int]]:
+    return [(nx, ny) for ny in range(Ny) for nx in range(Nx)]
+
+
+def spherical_j0(x: torch.Tensor) -> torch.Tensor:
+    return torch.where(x.abs() < 1e-8, torch.ones_like(x), torch.sin(x) / x)
+
+
+def spatial_correlation_matrix(Nx: int, Ny: int, W_lambda_x: float, W_lambda_y: float) -> torch.Tensor:
+    coords = port_coordinates(Nx, Ny)
+    N = Nx * Ny
+    J = torch.empty(N, N, dtype=torch.float32)
+    for i, (nx_i, ny_i) in enumerate(coords):
+        for j, (nx_j, ny_j) in enumerate(coords):
+            dx = abs(nx_i - nx_j) / max(Nx - 1, 1) * W_lambda_x
+            dy = abs(ny_i - ny_j) / max(Ny - 1, 1) * W_lambda_y
+            distance = math.sqrt(dx * dx + dy * dy)
+            J[i, j] = spherical_j0(torch.tensor(2.0 * math.pi * distance))
+    return J
+
+
+def generate_channels(
+    num_samples: int,
+    K: int,
+    Nx: int,
+    Ny: int,
+    W_lambda_x: float,
+    W_lambda_y: float,
+    distance_km: float,
+    seed: int | None = None,
+) -> torch.Tensor:
+    J = spatial_correlation_matrix(Nx, Ny, W_lambda_x, W_lambda_y)
+    eigvals, eigvecs = torch.linalg.eigh(J)
+    sort_idx = torch.argsort(eigvals, descending=True)
+    eigvals = eigvals[sort_idx].clamp_min(0.0)
+    eigvecs = eigvecs[:, sort_idx]
+
+    generator = None
+    if seed is not None:
+        generator = torch.Generator(device="cpu").manual_seed(seed)
+
+    N = Nx * Ny
+    scale = math.sqrt(0.5)
+    g_real = torch.randn(num_samples, K, N, generator=generator, dtype=torch.float32)
+    g_imag = torch.randn(num_samples, K, N, generator=generator, dtype=torch.float32)
+    g = (g_real + 1j * g_imag) * scale
+
+    lambda_sqrt = torch.diag(torch.sqrt(eigvals)).to(torch.complex64)
+    F_h = eigvecs.T.to(torch.complex64)
+    correlated = g.to(torch.complex64) @ (lambda_sqrt @ F_h)
+    return math.sqrt(path_loss_beta(distance_km)) * correlated
