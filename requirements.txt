@@ -1,0 +1,9 @@
+torch
+transformers
+peft
+numpy
+scipy
+pyyaml
+matplotlib
+tqdm
+pytest
