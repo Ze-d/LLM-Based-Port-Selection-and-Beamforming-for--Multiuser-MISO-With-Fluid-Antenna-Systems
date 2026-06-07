@@ -804,3 +804,14 @@ git commit -m "docs: record mvp reproduction results"
 - Completeness scan: Every MVP task names concrete files, commands, expected outputs, and tensor contracts. Full paper sweeps are explicitly outside MVP scope and listed as the next stage after acceptance criteria pass.
 - Type consistency: The core tensors use consistent shapes: `H [B,K,N]`, soft selection `[B,n,N]`, `H_eff [B,K,n]`, `C [B,n,K]`, `p/q [B,K]`, `rate [B]`.
 - Reproduction risk: The MVP uses PEFT LoRA on GPT-2 `c_attn`, which is an engineering approximation of paper Q/V-only LoRA. This is acceptable for the first end-to-end reproduction and must be replaced by explicit Q/V LoRA for strict paper-level reproduction.
+
+## Execution Notes
+
+- Test command result: `uv run --with torch --with pytest --with numpy --with pyyaml --with transformers --with peft python -m pytest -q` completed with `19 passed in 14.97s`.
+- Train command result: `uv run --with torch --with numpy --with pyyaml --with transformers --with peft python scripts/train_mvp.py --config configs/mvp.yaml` completed and wrote `outputs/mvp/proposed.pt`.
+- Evaluation command result: `uv run --with torch --with numpy --with pyyaml --with transformers --with peft python scripts/evaluate_mvp.py --config configs/mvp.yaml --checkpoint outputs/mvp/proposed.pt` completed and wrote `outputs/mvp/results.csv`.
+- Training history: epoch 1 `train_loss=-12.095795094966888`, `val_loss=-11.072524070739746`; epoch 2 `train_loss=-13.259718537330627`, `val_loss=-12.941745042800903`.
+- Random test sum rate: `19.097673416137695`.
+- Proposed test sum rate: `18.745282649993896`.
+- Runtime notes: verification and scripts were run with `uv` because system Python did not have the required packages. HuggingFace emitted unauthenticated-request and Windows symlink-cache warnings while loading `gpt2`; the model still loaded successfully. `outputs/mvp/proposed.pt` is about 380 MB and is intentionally ignored by git, while the small CSV result artifacts are retained.
+- Next reproduction expansion: increase `train_samples` to `1000`, `test_samples` to `200`, and `epochs` to `20`; then switch GPT-2 layers from `2` to `6`; then add Transformer baseline; then reproduce Fig.5; then add CNN and LLM-sequential baselines; then run Fig.6-Fig.11 sweeps.
