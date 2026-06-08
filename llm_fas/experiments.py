@@ -18,6 +18,17 @@ def parse_seed_list(raw: str) -> list[int]:
     return seeds
 
 
+def parse_method_list(raw: str) -> list[str]:
+    methods = [part.strip().lower() for part in raw.split(",") if part.strip()]
+    if not methods:
+        raise ValueError("At least one trainable method must be provided")
+    supported = {"proposed", "transformer"}
+    invalid = [method for method in methods if method not in supported]
+    if invalid:
+        raise ValueError(f"Unsupported method(s): {', '.join(invalid)}. Supported methods: proposed, transformer")
+    return methods
+
+
 def clone_config_for_seed(cfg: ExperimentConfig, seed: int, output_root: str | Path) -> ExperimentConfig:
     seed_dir = Path(output_root) / f"seed_{seed}"
     return replace(cfg, seed=seed, train=replace(cfg.train, output_dir=str(seed_dir)))
@@ -46,6 +57,18 @@ def evaluate_checkpoint(cfg: ExperimentConfig, checkpoint_path: str | Path) -> P
     from llm_fas.train import evaluate_checkpoint as _evaluate_checkpoint
 
     return _evaluate_checkpoint(cfg, checkpoint_path)
+
+
+def train_method(cfg: ExperimentConfig, method: str) -> Path:
+    from llm_fas.train import train_method as _train_method
+
+    return _train_method(cfg, method=method)
+
+
+def evaluate_checkpoints(cfg: ExperimentConfig, checkpoints: dict[str, str | Path]) -> Path:
+    from llm_fas.train import evaluate_checkpoints as _evaluate_checkpoints
+
+    return _evaluate_checkpoints(cfg, checkpoints)
 
 
 SUMMARY_FIELDNAMES = [
@@ -150,6 +173,7 @@ def run_seed_experiments(
     config_path: str | Path,
     seeds: Iterable[int],
     output_root: str | Path,
+    methods: Iterable[str] | None = None,
 ) -> tuple[Path, Path]:
     from llm_fas.config import load_config
 
@@ -157,12 +181,19 @@ def run_seed_experiments(
     seed_values = [int(seed) for seed in seeds]
     if not seed_values:
         raise ValueError("At least one seed must be provided")
+    method_values = list(methods) if methods is not None else ["proposed"]
+    if not method_values:
+        raise ValueError("At least one trainable method must be provided")
 
     all_rows: list[dict[str, str]] = []
     for seed in seed_values:
         cfg = clone_config_for_seed(base_cfg, seed, output_root)
         write_config_snapshot(cfg, cfg.train.output_dir)
-        checkpoint_path = train_proposed(cfg)
-        result_path = evaluate_checkpoint(cfg, checkpoint_path)
+        if method_values == ["proposed"]:
+            checkpoint_path = train_proposed(cfg)
+            result_path = evaluate_checkpoint(cfg, checkpoint_path)
+        else:
+            checkpoints = {method: train_method(cfg, method) for method in method_values}
+            result_path = evaluate_checkpoints(cfg, checkpoints)
         all_rows.extend(read_result_rows(result_path))
     return write_aggregate_outputs(all_rows, output_root)

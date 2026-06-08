@@ -11,6 +11,7 @@ import pytest
 from llm_fas.config import load_config
 from llm_fas.experiments import (
     clone_config_for_seed,
+    parse_method_list,
     parse_seed_list,
     run_seed_experiments,
     summarize_results,
@@ -25,6 +26,15 @@ def test_parse_seed_list_accepts_comma_separated_values():
 def test_parse_seed_list_rejects_empty_input():
     with pytest.raises(ValueError, match="At least one seed"):
         parse_seed_list(" , ")
+
+
+def test_parse_method_list_accepts_transformer_and_proposed():
+    assert parse_method_list("transformer, proposed") == ["transformer", "proposed"]
+
+
+def test_parse_method_list_rejects_random_as_trainable_method():
+    with pytest.raises(ValueError, match="Unsupported method"):
+        parse_method_list("random,proposed")
 
 
 def test_clone_config_for_seed_changes_seed_and_output_dir(tmp_path):
@@ -250,6 +260,60 @@ def test_run_seed_experiments_accepts_one_shot_seed_generator(monkeypatch, tmp_p
     ]
 
 
+def test_run_seed_experiments_trains_multiple_methods_together(monkeypatch, tmp_path):
+    calls: list[tuple[str, int, str]] = []
+
+    def fake_train_method(cfg, method):
+        calls.append(("train", cfg.seed, method))
+        output_dir = Path(cfg.train.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint = output_dir / f"{method}.pt"
+        checkpoint.write_text(f"fake {method} checkpoint", encoding="utf-8")
+        return checkpoint
+
+    def fake_evaluate_checkpoints(cfg, checkpoints):
+        calls.append(("evaluate", cfg.seed, ",".join(checkpoints.keys())))
+        output_dir = Path(cfg.train.output_dir)
+        result_path = output_dir / "results.csv"
+        with result_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(_result("random", cfg.seed, 1.0).keys()))
+            writer.writeheader()
+            writer.writerow(_result("random", cfg.seed, 10.0 + cfg.seed))
+            writer.writerow(_result("transformer", cfg.seed, 10.5 + cfg.seed))
+            writer.writerow(_result("proposed", cfg.seed, 11.0 + cfg.seed))
+        return result_path
+
+    monkeypatch.setattr("llm_fas.experiments.train_method", fake_train_method)
+    monkeypatch.setattr("llm_fas.experiments.evaluate_checkpoints", fake_evaluate_checkpoints)
+
+    all_results_path, summary_path = run_seed_experiments(
+        config_path="configs/mvp.yaml",
+        seeds=[1, 2],
+        output_root=tmp_path / "stage3",
+        methods=["transformer", "proposed"],
+    )
+
+    assert calls == [
+        ("train", 1, "transformer"),
+        ("train", 1, "proposed"),
+        ("evaluate", 1, "transformer,proposed"),
+        ("train", 2, "transformer"),
+        ("train", 2, "proposed"),
+        ("evaluate", 2, "transformer,proposed"),
+    ]
+    assert all_results_path.exists()
+    assert summary_path.exists()
+    all_rows = list(csv.DictReader(all_results_path.open(newline="")))
+    assert [row["method"] for row in all_rows] == [
+        "random",
+        "transformer",
+        "proposed",
+        "random",
+        "transformer",
+        "proposed",
+    ]
+
+
 def test_stage2_seed_runner_cli_exposes_expected_arguments():
     help_result = subprocess.run(
         [sys.executable, "scripts/run_stage2_seeds.py", "--help"],
@@ -262,6 +326,22 @@ def test_stage2_seed_runner_cli_exposes_expected_arguments():
     assert "--config" in help_result.stdout
     assert "--seeds" in help_result.stdout
     assert "--output-root" in help_result.stdout
+    assert "--methods" in help_result.stdout
+
+
+def test_stage3_transformer_runner_cli_exposes_expected_arguments():
+    help_result = subprocess.run(
+        [sys.executable, "scripts/run_stage3_transformer.py", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert help_result.returncode == 0
+    assert "--config" in help_result.stdout
+    assert "--seeds" in help_result.stdout
+    assert "--output-root" in help_result.stdout
+    assert "--methods" in help_result.stdout
 
 
 def test_stage2_seed_runner_cli_reports_bad_seed_without_traceback():

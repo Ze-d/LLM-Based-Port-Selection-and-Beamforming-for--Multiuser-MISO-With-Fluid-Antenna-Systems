@@ -10,21 +10,21 @@ from llm_fas.experiments import parse_method_list, parse_seed_list, run_seed_exp
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run Stage 2 MVP stability experiments over multiple seeds.")
+    parser = argparse.ArgumentParser(description="Run Stage 3 Transformer baseline experiments over multiple seeds.")
     parser.add_argument("--config", default="configs/mvp.yaml", help="Path to the base experiment config.")
     parser.add_argument(
         "--seeds",
-        default="20260606,20260607,20260608",
+        default="20260606",
         help="Comma-separated integer seeds.",
     )
     parser.add_argument(
         "--output-root",
-        default="outputs/stage2_mvp_stability",
+        default="outputs/stage3_transformer_smoke",
         help="Directory for per-seed outputs and aggregate CSVs.",
     )
     parser.add_argument(
         "--methods",
-        default="proposed",
+        default="transformer,proposed",
         help="Comma-separated trainable methods. Supported: proposed, transformer.",
     )
     args = parser.parse_args()
