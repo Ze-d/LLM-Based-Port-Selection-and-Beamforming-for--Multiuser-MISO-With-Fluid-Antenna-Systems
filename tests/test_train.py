@@ -10,7 +10,7 @@ from pathlib import Path
 from transformers import GPT2Config, GPT2Model
 
 from llm_fas.config import load_config
-from llm_fas.train import evaluate_checkpoint, train_proposed
+from llm_fas.train import evaluate_checkpoint, evaluate_checkpoints, train_method, train_proposed
 
 
 def _tiny_gpt2(_name: str) -> GPT2Model:
@@ -91,6 +91,47 @@ def test_evaluate_checkpoint_writes_results(monkeypatch, tmp_path):
     assert set(rows[0].keys()) == expected_columns
     assert [row["method"] for row in rows] == ["random", "proposed"]
     assert [row["selection_mode"] for row in rows] == ["hard", "hard"]
+    for row in rows:
+        assert row["K"] == str(cfg.system.K)
+        assert row["N"] == str(cfg.system.Nx * cfg.system.Ny)
+        assert math.isfinite(float(row["test_sum_rate"]))
+        assert float(row["test_sum_rate"]) > 0.0
+
+
+def test_train_method_writes_transformer_checkpoint_and_history(tmp_path):
+    cfg = _tiny_cfg(tmp_path)
+
+    checkpoint_path = train_method(cfg, method="transformer")
+
+    assert checkpoint_path == Path(cfg.train.output_dir) / "transformer.pt"
+    assert checkpoint_path.exists()
+    history_path = Path(cfg.train.output_dir) / "transformer_train_history.csv"
+    assert history_path.exists()
+    rows = list(csv.DictReader(history_path.open(newline="")))
+    assert len(rows) == 1
+    assert rows[0].keys() == {"epoch", "train_loss", "val_loss"}
+    assert math.isfinite(float(rows[0]["train_loss"]))
+    assert math.isfinite(float(rows[0]["val_loss"]))
+
+
+def test_evaluate_checkpoints_writes_random_transformer_proposed(monkeypatch, tmp_path):
+    monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
+    cfg = _tiny_cfg(tmp_path)
+    transformer_checkpoint = train_method(cfg, method="transformer")
+    proposed_checkpoint = train_proposed(cfg)
+
+    results_path = evaluate_checkpoints(
+        cfg,
+        {
+            "transformer": transformer_checkpoint,
+            "proposed": proposed_checkpoint,
+        },
+    )
+
+    rows = list(csv.DictReader(results_path.open(newline="")))
+    assert [row["method"] for row in rows] == ["random", "transformer", "proposed"]
+    assert [row["selection_mode"] for row in rows] == ["hard", "hard", "hard"]
+    assert {tuple(row.keys()) for row in rows} == {tuple(rows[0].keys())}
     for row in rows:
         assert row["K"] == str(cfg.system.K)
         assert row["N"] == str(cfg.system.Nx * cfg.system.Ny)
