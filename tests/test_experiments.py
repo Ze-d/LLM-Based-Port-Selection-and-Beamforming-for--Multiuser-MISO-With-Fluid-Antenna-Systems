@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import statistics
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -246,3 +248,30 @@ def test_run_seed_experiments_accepts_one_shot_seed_generator(monkeypatch, tmp_p
         ("train", 2, str(tmp_path / "stage2" / "seed_2")),
         ("evaluate", 2, str(tmp_path / "stage2" / "seed_2" / "proposed.pt")),
     ]
+
+
+def test_stage2_seed_runner_cli_exposes_expected_arguments():
+    help_result = subprocess.run(
+        [sys.executable, "scripts/run_stage2_seeds.py", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert help_result.returncode == 0
+    assert "--config" in help_result.stdout
+    assert "--seeds" in help_result.stdout
+    assert "--output-root" in help_result.stdout
+
+
+def test_stage2_seed_runner_cli_reports_bad_seed_without_traceback():
+    bad_result = subprocess.run(
+        [sys.executable, "scripts/run_stage2_seeds.py", "--seeds", "abc"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert bad_result.returncode == 2
+    assert "invalid literal" in bad_result.stderr or "At least one seed" in bad_result.stderr
+    assert "Traceback" not in bad_result.stderr
