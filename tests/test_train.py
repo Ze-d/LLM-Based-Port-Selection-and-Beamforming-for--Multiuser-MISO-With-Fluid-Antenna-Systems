@@ -65,7 +65,32 @@ def test_evaluate_checkpoint_writes_results(monkeypatch, tmp_path):
 
     assert results_path == Path(cfg.train.output_dir) / "results.csv"
     rows = list(csv.DictReader(results_path.open(newline="")))
+    expected_columns = {
+        "method",
+        "selection_mode",
+        "K",
+        "Nx",
+        "Ny",
+        "N",
+        "n_active",
+        "W_lambda_x",
+        "W_lambda_y",
+        "Pmax_dBm",
+        "distance_km",
+        "seed",
+        "train_samples",
+        "val_samples",
+        "test_samples",
+        "epochs",
+        "batch_size",
+        "gpt2_layers",
+        "d_mha",
+        "mha_heads",
+        "test_sum_rate",
+    }
+    assert set(rows[0].keys()) == expected_columns
     assert [row["method"] for row in rows] == ["random", "proposed"]
+    assert [row["selection_mode"] for row in rows] == ["hard", "hard"]
     for row in rows:
         assert row["K"] == str(cfg.system.K)
         assert row["N"] == str(cfg.system.Nx * cfg.system.Ny)
