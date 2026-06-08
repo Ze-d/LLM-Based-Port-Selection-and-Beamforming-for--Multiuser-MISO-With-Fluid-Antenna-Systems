@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import torch
 from peft import LoraConfig, get_peft_model
 from torch import nn
@@ -9,7 +11,7 @@ from transformers import GPT2Model
 from llm_fas.beamforming import beamforming_from_pq, sum_rate
 from llm_fas.config import ExperimentConfig
 from llm_fas.physics import dbm_to_watt, noise_power_watt
-from llm_fas.sinkhorn import gumbel_sinkhorn
+from llm_fas.sinkhorn import gumbel_sinkhorn, hard_topk_ports, ports_to_selection_matrix
 
 
 class ProposedLLMFASModel(nn.Module):
@@ -58,7 +60,17 @@ class ProposedLLMFASModel(nn.Module):
         features = torch.cat([real_attn, imag_attn], dim=1).reshape(H.shape[0], -1)
         return self.embed_proj(features).reshape(H.shape[0], self.sequence_length, self.d_llm)
 
-    def forward(self, H: torch.Tensor, tau: float, training: bool) -> dict[str, torch.Tensor]:
+    def forward(
+        self,
+        H: torch.Tensor,
+        tau: float,
+        training: bool,
+        selection_mode: Literal["soft", "hard"] | None = None,
+    ) -> dict[str, torch.Tensor | str]:
+        active_selection_mode = ("soft" if training else "hard") if selection_mode is None else selection_mode
+        if active_selection_mode not in ("soft", "hard"):
+            raise ValueError(f"selection_mode must be 'soft' or 'hard', got {active_selection_mode!r}")
+
         embeddings = self._preprocess(H)
         llm_out = self.backbone(inputs_embeds=embeddings).last_hidden_state
         z = llm_out.reshape(H.shape[0], -1)
@@ -74,15 +86,28 @@ class ProposedLLMFASModel(nn.Module):
             iters=self.cfg.model.sinkhorn_iters,
             add_noise=training,
         )
-        H_eff = H @ selection_soft.transpose(-1, -2).to(H.dtype)
+        if active_selection_mode == "hard":
+            ports = hard_topk_ports(port_scores, self.n_active)
+            selection_hard = ports_to_selection_matrix(ports, self.N).to(device=H.device, dtype=H.real.dtype)
+            selection = selection_hard
+        else:
+            selection = selection_soft
+
+        H_eff = H @ selection.transpose(-1, -2).to(H.dtype)
         C = beamforming_from_pq(H_eff, p, q, self.noise_power)
         rate = sum_rate(H_eff, C, self.noise_power)
-        return {
+        out: dict[str, torch.Tensor | str] = {
             "port_scores": port_scores,
             "selection_soft": selection_soft,
+            "selection": selection,
+            "selection_mode": active_selection_mode,
             "p": p,
             "q": q,
             "H_eff": H_eff,
             "C": C,
             "rate": rate,
         }
+        if active_selection_mode == "hard":
+            out["ports"] = ports
+            out["selection_hard"] = selection_hard
+        return out

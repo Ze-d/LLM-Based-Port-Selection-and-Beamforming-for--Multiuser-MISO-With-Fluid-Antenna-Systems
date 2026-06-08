@@ -1,6 +1,7 @@
 from dataclasses import replace
 import math
 
+import pytest
 import torch
 from transformers import GPT2Config, GPT2Model
 
@@ -69,6 +70,55 @@ def test_proposed_model_forward_returns_expected_tensors(monkeypatch):
     Pmax = dbm_to_watt(cfg.system.Pmax_dBm)
     assert torch.allclose(out["p"].sum(dim=1), torch.full((2,), Pmax), rtol=1e-5, atol=1e-7)
     assert torch.allclose(out["q"].sum(dim=1), torch.full((2,), Pmax), rtol=1e-5, atol=1e-7)
+
+
+def test_proposed_model_hard_inference_returns_unique_ports(monkeypatch):
+    monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
+    cfg = _tiny_cfg()
+    H = generate_channels(
+        num_samples=3,
+        K=cfg.system.K,
+        Nx=cfg.system.Nx,
+        Ny=cfg.system.Ny,
+        W_lambda_x=cfg.system.W_lambda_x,
+        W_lambda_y=cfg.system.W_lambda_y,
+        distance_km=cfg.system.distance_km,
+        seed=100,
+    )
+
+    model = ProposedLLMFASModel(cfg)
+    out = model(H, tau=0.1, training=False, selection_mode="hard")
+
+    N = cfg.system.Nx * cfg.system.Ny
+    assert out["selection_mode"] == "hard"
+    assert out["ports"].shape == (3, cfg.system.n_active)
+    assert out["selection_hard"].shape == (3, cfg.system.n_active, N)
+    assert out["selection"].shape == (3, cfg.system.n_active, N)
+    assert torch.equal(out["selection"], out["selection_hard"])
+    assert torch.allclose(out["selection_hard"].sum(dim=-1), torch.ones(3, cfg.system.n_active))
+    assert torch.all((out["selection_hard"] == 0.0) | (out["selection_hard"] == 1.0))
+    for ports in out["ports"].tolist():
+        assert len(set(ports)) == cfg.system.n_active
+    assert torch.isfinite(out["rate"]).all()
+
+
+def test_proposed_model_invalid_selection_mode_raises(monkeypatch):
+    monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
+    cfg = _tiny_cfg()
+    H = generate_channels(
+        num_samples=1,
+        K=cfg.system.K,
+        Nx=cfg.system.Nx,
+        Ny=cfg.system.Ny,
+        W_lambda_x=cfg.system.W_lambda_x,
+        W_lambda_y=cfg.system.W_lambda_y,
+        distance_km=cfg.system.distance_km,
+        seed=101,
+    )
+
+    model = ProposedLLMFASModel(cfg)
+    with pytest.raises(ValueError):
+        model(H[:1], tau=0.1, training=False, selection_mode="")
 
 
 def test_proposed_model_exposes_trainable_lora_and_layernorm(monkeypatch):
