@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from llm_fas.config import load_config
-from llm_fas.experiments import clone_config_for_seed, parse_seed_list, summarize_results, write_aggregate_outputs
+from llm_fas.experiments import (
+    clone_config_for_seed,
+    parse_seed_list,
+    run_seed_experiments,
+    summarize_results,
+    write_aggregate_outputs,
+)
 
 
 def test_parse_seed_list_accepts_comma_separated_values():
@@ -134,3 +140,109 @@ def test_write_aggregate_outputs_writes_headers_for_empty_rows(tmp_path):
     ]
     assert list(csv.DictReader(all_results_path.open(newline=""))) == []
     assert list(csv.DictReader(summary_path.open(newline=""))) == []
+
+
+def test_run_seed_experiments_trains_evaluates_and_aggregates(monkeypatch, tmp_path):
+    calls: list[tuple[str, int, str]] = []
+
+    def fake_train(cfg):
+        calls.append(("train", cfg.seed, cfg.train.output_dir))
+        output_dir = Path(cfg.train.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint = output_dir / "proposed.pt"
+        checkpoint.write_text("fake checkpoint", encoding="utf-8")
+        return checkpoint
+
+    def fake_evaluate(cfg, checkpoint_path):
+        calls.append(("evaluate", cfg.seed, str(checkpoint_path)))
+        output_dir = Path(cfg.train.output_dir)
+        result_path = output_dir / "results.csv"
+        with result_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(_result("random", cfg.seed, 1.0).keys()))
+            writer.writeheader()
+            writer.writerow(_result("random", cfg.seed, 10.0 + cfg.seed))
+            writer.writerow(_result("proposed", cfg.seed, 11.0 + cfg.seed))
+        return result_path
+
+    monkeypatch.setattr("llm_fas.experiments.train_proposed", fake_train)
+    monkeypatch.setattr("llm_fas.experiments.evaluate_checkpoint", fake_evaluate)
+
+    all_results_path, summary_path = run_seed_experiments(
+        config_path="configs/mvp.yaml",
+        seeds=[1, 2],
+        output_root=tmp_path / "stage2",
+    )
+
+    assert calls == [
+        ("train", 1, str(tmp_path / "stage2" / "seed_1")),
+        ("evaluate", 1, str(tmp_path / "stage2" / "seed_1" / "proposed.pt")),
+        ("train", 2, str(tmp_path / "stage2" / "seed_2")),
+        ("evaluate", 2, str(tmp_path / "stage2" / "seed_2" / "proposed.pt")),
+    ]
+    assert all_results_path.exists()
+    assert summary_path.exists()
+    assert (tmp_path / "stage2" / "seed_1" / "config_snapshot.yaml").exists()
+    assert (tmp_path / "stage2" / "seed_2" / "config_snapshot.yaml").exists()
+
+
+def test_run_seed_experiments_rejects_empty_seeds(monkeypatch, tmp_path):
+    calls: list[str] = []
+
+    def fake_train(cfg):
+        calls.append("train")
+        return Path(cfg.train.output_dir) / "proposed.pt"
+
+    def fake_evaluate(cfg, checkpoint_path):
+        calls.append("evaluate")
+        return Path(cfg.train.output_dir) / "results.csv"
+
+    monkeypatch.setattr("llm_fas.experiments.train_proposed", fake_train)
+    monkeypatch.setattr("llm_fas.experiments.evaluate_checkpoint", fake_evaluate)
+
+    with pytest.raises(ValueError, match="At least one seed"):
+        run_seed_experiments(
+            config_path="configs/mvp.yaml",
+            seeds=[],
+            output_root=tmp_path,
+        )
+
+    assert calls == []
+
+
+def test_run_seed_experiments_accepts_one_shot_seed_generator(monkeypatch, tmp_path):
+    calls: list[tuple[str, int, str]] = []
+
+    def fake_train(cfg):
+        calls.append(("train", cfg.seed, cfg.train.output_dir))
+        output_dir = Path(cfg.train.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint = output_dir / "proposed.pt"
+        checkpoint.write_text("fake checkpoint", encoding="utf-8")
+        return checkpoint
+
+    def fake_evaluate(cfg, checkpoint_path):
+        calls.append(("evaluate", cfg.seed, str(checkpoint_path)))
+        output_dir = Path(cfg.train.output_dir)
+        result_path = output_dir / "results.csv"
+        with result_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(_result("random", cfg.seed, 1.0).keys()))
+            writer.writeheader()
+            writer.writerow(_result("random", cfg.seed, 10.0 + cfg.seed))
+            writer.writerow(_result("proposed", cfg.seed, 11.0 + cfg.seed))
+        return result_path
+
+    monkeypatch.setattr("llm_fas.experiments.train_proposed", fake_train)
+    monkeypatch.setattr("llm_fas.experiments.evaluate_checkpoint", fake_evaluate)
+
+    run_seed_experiments(
+        config_path="configs/mvp.yaml",
+        seeds=(seed for seed in [1, 2]),
+        output_root=tmp_path / "stage2",
+    )
+
+    assert calls == [
+        ("train", 1, str(tmp_path / "stage2" / "seed_1")),
+        ("evaluate", 1, str(tmp_path / "stage2" / "seed_1" / "proposed.pt")),
+        ("train", 2, str(tmp_path / "stage2" / "seed_2")),
+        ("evaluate", 2, str(tmp_path / "stage2" / "seed_2" / "proposed.pt")),
+    ]

@@ -23,6 +23,31 @@ def clone_config_for_seed(cfg: ExperimentConfig, seed: int, output_root: str | P
     return replace(cfg, seed=seed, train=replace(cfg.train, output_dir=str(seed_dir)))
 
 
+def write_config_snapshot(cfg: ExperimentConfig, output_dir: str | Path) -> Path:
+    path = Path(output_dir) / "config_snapshot.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(asdict(cfg), f, sort_keys=False)
+    return path
+
+
+def read_result_rows(path: str | Path) -> list[dict[str, str]]:
+    with Path(path).open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def train_proposed(cfg: ExperimentConfig) -> Path:
+    from llm_fas.train import train_proposed as _train_proposed
+
+    return _train_proposed(cfg)
+
+
+def evaluate_checkpoint(cfg: ExperimentConfig, checkpoint_path: str | Path) -> Path:
+    from llm_fas.train import evaluate_checkpoint as _evaluate_checkpoint
+
+    return _evaluate_checkpoint(cfg, checkpoint_path)
+
+
 SUMMARY_FIELDNAMES = [
     "method",
     "selection_mode",
@@ -119,3 +144,25 @@ def write_aggregate_outputs(rows: list[dict[str, str]], output_root: str | Path)
         writer.writerows(summarize_results(rows))
 
     return all_results_path, summary_path
+
+
+def run_seed_experiments(
+    config_path: str | Path,
+    seeds: Iterable[int],
+    output_root: str | Path,
+) -> tuple[Path, Path]:
+    from llm_fas.config import load_config
+
+    base_cfg = load_config(config_path)
+    seed_values = [int(seed) for seed in seeds]
+    if not seed_values:
+        raise ValueError("At least one seed must be provided")
+
+    all_rows: list[dict[str, str]] = []
+    for seed in seed_values:
+        cfg = clone_config_for_seed(base_cfg, seed, output_root)
+        write_config_snapshot(cfg, cfg.train.output_dir)
+        checkpoint_path = train_proposed(cfg)
+        result_path = evaluate_checkpoint(cfg, checkpoint_path)
+        all_rows.extend(read_result_rows(result_path))
+    return write_aggregate_outputs(all_rows, output_root)
