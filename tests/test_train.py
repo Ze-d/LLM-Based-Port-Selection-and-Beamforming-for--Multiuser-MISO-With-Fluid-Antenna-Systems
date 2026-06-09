@@ -114,6 +114,30 @@ def test_train_method_writes_transformer_checkpoint_and_history(tmp_path):
     assert math.isfinite(float(rows[0]["val_loss"]))
 
 
+def test_train_method_saves_checkpoint_each_time_validation_improves(monkeypatch, tmp_path):
+    base_cfg = _tiny_cfg(tmp_path)
+    cfg = replace(base_cfg, train=replace(base_cfg.train, epochs=2))
+    val_rates = iter([10.0, 11.0])
+    saved_paths: list[Path] = []
+
+    def fake_evaluate_model_rate(*args, **kwargs):
+        return next(val_rates)
+
+    def fake_save(state_dict, path):
+        saved_paths.append(Path(path))
+        Path(path).write_text("checkpoint", encoding="utf-8")
+
+    monkeypatch.setattr("llm_fas.train._evaluate_model_rate", fake_evaluate_model_rate)
+    monkeypatch.setattr("llm_fas.train.torch.save", fake_save)
+
+    checkpoint_path = train_method(cfg, method="transformer")
+
+    assert checkpoint_path == Path(cfg.train.output_dir) / "transformer.pt"
+    assert saved_paths == [checkpoint_path, checkpoint_path]
+    rows = list(csv.DictReader((Path(cfg.train.output_dir) / "transformer_train_history.csv").open(newline="")))
+    assert [float(row["val_loss"]) for row in rows] == [-10.0, -11.0]
+
+
 def test_evaluate_checkpoints_writes_random_transformer_proposed(monkeypatch, tmp_path):
     monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
     cfg = _tiny_cfg(tmp_path)

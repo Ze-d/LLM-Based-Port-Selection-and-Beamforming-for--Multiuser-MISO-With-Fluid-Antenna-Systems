@@ -105,6 +105,8 @@ def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
     model = build_model(method, cfg).to(device)
     optimizer = torch.optim.Adam((param for param in model.parameters() if param.requires_grad), lr=cfg.train.lr)
     history: list[dict[str, float | int]] = []
+    checkpoint_path = output_dir / f"{method}.pt"
+    best_val_rate = -float("inf")
 
     for epoch in range(cfg.train.epochs):
         model.train()
@@ -129,9 +131,10 @@ def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
         if not np.isfinite(train_loss) or not np.isfinite(val_loss):
             raise RuntimeError(f"Non-finite loss at epoch {epoch + 1}: train={train_loss}, val={val_loss}")
         history.append({"epoch": epoch + 1, "train_loss": train_loss, "val_loss": val_loss})
+        if val_rate > best_val_rate:
+            best_val_rate = val_rate
+            torch.save(model.state_dict(), checkpoint_path)
 
-    checkpoint_path = output_dir / f"{method}.pt"
-    torch.save(model.state_dict(), checkpoint_path)
     _write_history(output_dir / f"{method}_train_history.csv", history)
     if method == "proposed":
         _write_history(output_dir / "train_history.csv", history)
