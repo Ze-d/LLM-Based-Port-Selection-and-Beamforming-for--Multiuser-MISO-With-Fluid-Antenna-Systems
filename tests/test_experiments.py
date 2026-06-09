@@ -344,6 +344,34 @@ def test_stage3_transformer_runner_cli_exposes_expected_arguments():
     assert "--methods" in help_result.stdout
 
 
+def test_stage3_extended_runner_cli_exposes_seed_count():
+    help_result = subprocess.run(
+        [sys.executable, "scripts/run_stage3_extended.py", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert help_result.returncode == 0
+    assert "--seed-count" in help_result.stdout
+    assert "--seeds" in help_result.stdout
+    assert "--output-root" in help_result.stdout
+    assert "--methods" in help_result.stdout
+
+
+def test_stage3_extended_runner_seed_count_dry_run():
+    dry_result = subprocess.run(
+        [sys.executable, "scripts/run_stage3_extended.py", "--seed-count", "5", "--dry-run"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert dry_result.returncode == 0
+    assert "20260606,20260607,20260608,20260609,20260610" in dry_result.stdout
+    assert "outputs/stage3_transformer_5seed" in dry_result.stdout
+
+
 def test_stage2_seed_runner_cli_reports_bad_seed_without_traceback():
     bad_result = subprocess.run(
         [sys.executable, "scripts/run_stage2_seeds.py", "--seeds", "abc"],
