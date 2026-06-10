@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Literal
 
@@ -30,7 +30,9 @@ class JointFASModelBase(nn.Module):
         self.imag_proj = nn.Linear(self.N, cfg.model.d_mha)
         self.real_mha = nn.MultiheadAttention(cfg.model.d_mha, cfg.model.mha_heads, batch_first=True)
         self.imag_mha = nn.MultiheadAttention(cfg.model.d_mha, cfg.model.mha_heads, batch_first=True)
-        self.embed_proj = nn.Linear(2 * self.K * cfg.model.d_mha, self.sequence_length * self.d_llm)
+        self.embed_token_proj = nn.Linear(cfg.model.d_mha, self.d_llm)
+        self.embed_agg = nn.Parameter(torch.empty(1, self.sequence_length, 2 * self.K))
+        nn.init.xavier_uniform_(self.embed_agg)
         self.port_head = nn.Linear(self.sequence_length * self.d_llm, self.n_active * self.N)
         self.power_head = nn.Linear(self.sequence_length * self.d_llm, 2 * self.K)
 
@@ -39,8 +41,10 @@ class JointFASModelBase(nn.Module):
         imag_tokens = self.imag_proj(H.imag.float())
         real_attn, _ = self.real_mha(real_tokens, real_tokens, real_tokens, need_weights=False)
         imag_attn, _ = self.imag_mha(imag_tokens, imag_tokens, imag_tokens, need_weights=False)
-        features = torch.cat([real_attn, imag_attn], dim=1).reshape(H.shape[0], -1)
-        return self.embed_proj(features).reshape(H.shape[0], self.sequence_length, self.d_llm)
+        features = torch.cat([real_attn, imag_attn], dim=1)  # B, 2*K, d_mha
+        tokens = self.embed_token_proj(features)  # B, 2*K, d_llm
+        agg = F.softmax(self.embed_agg, dim=-1)  # 1, Nn, 2K
+        return agg @ tokens  # B, Nn, d_llm
 
     def _run_backbone(self, embeddings: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
