@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from llm_fas.config import ExperimentConfig, load_config
 from llm_fas.experiments import parse_seed_list
-from llm_fas.train import build_model, evaluate_checkpoints, train_method
+from llm_fas.train import evaluate_checkpoints, train_method
 
 FIG5_BATCH_SIZES = [50, 100, 200]
 
@@ -60,10 +60,12 @@ def main() -> None:
         print(f"output_root={output_root}")
         print("batch_sizes:")
         for bs in FIG5_BATCH_SIZES:
-            print(f"  {bs}: train_samples={base_cfg.data.train_samples}, "
-                  f"epochs={base_cfg.train.epochs}, "
-                  f"d_mha={base_cfg.model.d_mha}, "
-                  f"layers={base_cfg.model.gpt2_layers}")
+            print(
+                f"  {bs}: train_samples={base_cfg.data.train_samples}, "
+                f"epochs={base_cfg.train.epochs}, "
+                f"d_mha={base_cfg.model.d_mha}, "
+                f"layers={base_cfg.model.gpt2_layers}"
+            )
         return
 
     for seed in seeds:
@@ -71,11 +73,15 @@ def main() -> None:
             cfg: ExperimentConfig = replace(
                 base_cfg,
                 seed=seed,
-                train=replace(base_cfg.train, batch_size=bs, output_dir=str(output_root / f"bs{bs}_seed{seed}")),
+                train=replace(
+                    base_cfg.train,
+                    batch_size=bs,
+                    output_dir=str(output_root / f"bs{bs}_seed{seed}"),
+                ),
             )
             print(f"\n=== Fig.5 batch_size={bs}, seed={seed} ===")
-            train_method(cfg, method="proposed", checkpoint_name="proposed")
-            evaluate_checkpoints(cfg, eval_methods=["proposed"])
+            checkpoint_path = train_method(cfg, method="proposed")
+            evaluate_checkpoints(cfg, {"proposed": checkpoint_path})
 
     print(f"\nConvergence histories written to subdirs of {output_root}")
 
