@@ -174,10 +174,13 @@ def run_seed_experiments(
     seeds: Iterable[int],
     output_root: str | Path,
     methods: Iterable[str] | None = None,
+    device: str | None = None,
 ) -> tuple[Path, Path]:
     from llm_fas.config import load_config
 
     base_cfg = load_config(config_path)
+    if device is not None:
+        base_cfg = replace(base_cfg, device=device)
     seed_values = [int(seed) for seed in seeds]
     if not seed_values:
         raise ValueError("At least one seed must be provided")

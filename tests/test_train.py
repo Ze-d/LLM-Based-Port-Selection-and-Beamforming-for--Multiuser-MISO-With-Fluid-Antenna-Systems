@@ -179,6 +179,8 @@ def test_cli_scripts_expose_expected_arguments():
 
     assert train_help.returncode == 0
     assert "--config" in train_help.stdout
+    assert "--device" in train_help.stdout
     assert eval_help.returncode == 0
     assert "--config" in eval_help.stdout
     assert "--checkpoint" in eval_help.stdout
+    assert "--device" in eval_help.stdout

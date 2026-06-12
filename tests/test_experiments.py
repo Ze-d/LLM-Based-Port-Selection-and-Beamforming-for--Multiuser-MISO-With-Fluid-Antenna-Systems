@@ -260,6 +260,41 @@ def test_run_seed_experiments_accepts_one_shot_seed_generator(monkeypatch, tmp_p
     ]
 
 
+def test_run_seed_experiments_applies_device_override(monkeypatch, tmp_path):
+    devices: list[str] = []
+
+    def fake_train(cfg):
+        devices.append(cfg.device)
+        output_dir = Path(cfg.train.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint = output_dir / "proposed.pt"
+        checkpoint.write_text("fake checkpoint", encoding="utf-8")
+        return checkpoint
+
+    def fake_evaluate(cfg, checkpoint_path):
+        devices.append(cfg.device)
+        output_dir = Path(cfg.train.output_dir)
+        result_path = output_dir / "results.csv"
+        with result_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(_result("random", cfg.seed, 1.0).keys()))
+            writer.writeheader()
+            writer.writerow(_result("random", cfg.seed, 10.0))
+            writer.writerow(_result("proposed", cfg.seed, 11.0))
+        return result_path
+
+    monkeypatch.setattr("llm_fas.experiments.train_proposed", fake_train)
+    monkeypatch.setattr("llm_fas.experiments.evaluate_checkpoint", fake_evaluate)
+
+    run_seed_experiments(
+        config_path="configs/mvp.yaml",
+        seeds=[1],
+        output_root=tmp_path,
+        device="cuda",
+    )
+
+    assert devices == ["cuda", "cuda"]
+
+
 def test_run_seed_experiments_trains_multiple_methods_together(monkeypatch, tmp_path):
     calls: list[tuple[str, int, str]] = []
 
@@ -327,6 +362,7 @@ def test_stage2_seed_runner_cli_exposes_expected_arguments():
     assert "--seeds" in help_result.stdout
     assert "--output-root" in help_result.stdout
     assert "--methods" in help_result.stdout
+    assert "--device" in help_result.stdout
 
 
 def test_stage3_transformer_runner_cli_exposes_expected_arguments():
@@ -342,6 +378,7 @@ def test_stage3_transformer_runner_cli_exposes_expected_arguments():
     assert "--seeds" in help_result.stdout
     assert "--output-root" in help_result.stdout
     assert "--methods" in help_result.stdout
+    assert "--device" in help_result.stdout
 
 
 def test_stage3_extended_runner_cli_exposes_seed_count():
@@ -357,6 +394,7 @@ def test_stage3_extended_runner_cli_exposes_seed_count():
     assert "--seeds" in help_result.stdout
     assert "--output-root" in help_result.stdout
     assert "--methods" in help_result.stdout
+    assert "--device" in help_result.stdout
 
 
 def test_stage3_extended_runner_seed_count_dry_run():

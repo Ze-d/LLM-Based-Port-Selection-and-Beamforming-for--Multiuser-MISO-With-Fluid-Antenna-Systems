@@ -43,6 +43,11 @@ def main() -> None:
         default="transformer,proposed",
         help="Comma-separated trainable methods. Supported: proposed, transformer.",
     )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Override config device. Examples: auto, cpu, cuda, cuda:0.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print resolved settings without starting training.")
     args = parser.parse_args()
 
@@ -59,10 +64,17 @@ def main() -> None:
         print(f"config={args.config}")
         print(f"seeds={seed_text}")
         print(f"methods={method_text}")
+        print(f"device={args.device or 'config'}")
         print(f"output_root={output_root}")
         return
 
-    all_results_path, summary_path = run_seed_experiments(args.config, seeds, output_root, methods=methods)
+    all_results_path, summary_path = run_seed_experiments(
+        args.config,
+        seeds,
+        output_root,
+        methods=methods,
+        device=args.device,
+    )
     print(all_results_path)
     print(summary_path)
 

@@ -40,6 +40,11 @@ def main() -> None:
         help="Directory for per-batch-size outputs.",
     )
     parser.add_argument(
+        "--device",
+        default=None,
+        help="Override config device. Examples: auto, cpu, cuda, cuda:0.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print resolved sweep matrix without starting training.",
@@ -52,11 +57,14 @@ def main() -> None:
         parser.error(str(exc))
 
     base_cfg = load_config(args.config)
+    if args.device is not None:
+        base_cfg = replace(base_cfg, device=args.device)
     output_root = Path(args.output_root)
 
     if args.dry_run:
         print(f"base_config={args.config}")
         print(f"seeds={seeds}")
+        print(f"device={base_cfg.device}")
         print(f"output_root={output_root}")
         print("batch_sizes:")
         for bs in FIG5_BATCH_SIZES:

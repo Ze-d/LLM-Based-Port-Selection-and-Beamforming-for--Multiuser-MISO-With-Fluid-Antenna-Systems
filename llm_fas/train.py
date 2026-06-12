@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import random
 from collections.abc import Mapping
 from pathlib import Path
@@ -60,6 +61,36 @@ def _select_device(device_name: str) -> torch.device:
     return torch.device(device_name)
 
 
+def _device_info(requested_device: str, resolved_device: torch.device) -> dict[str, str | bool | None]:
+    info: dict[str, str | bool | None] = {
+        "requested_device": requested_device,
+        "resolved_device": str(resolved_device),
+        "cuda_available": torch.cuda.is_available(),
+        "torch_cuda_version": torch.version.cuda,
+        "cuda_device_name": None,
+    }
+    if resolved_device.type == "cuda" and torch.cuda.is_available():
+        index = resolved_device.index if resolved_device.index is not None else torch.cuda.current_device()
+        info["cuda_device_name"] = torch.cuda.get_device_name(index)
+    return info
+
+
+def _log_device(stage: str, requested_device: str, resolved_device: torch.device, method: str | None = None) -> None:
+    info = _device_info(requested_device, resolved_device)
+    method_text = f" method={method}" if method else ""
+    name_text = f" ({info['cuda_device_name']})" if info["cuda_device_name"] else ""
+    print(
+        f"[llm_fas] {stage}{method_text} "
+        f"requested_device={info['requested_device']} resolved_device={info['resolved_device']}{name_text}"
+    )
+
+
+def _write_device_info(path: Path, requested_device: str, resolved_device: torch.device) -> None:
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(_device_info(requested_device, resolved_device), f, indent=2)
+        f.write("\n")
+
+
 def _tau_for_epoch(cfg: ExperimentConfig, epoch_index: int) -> float:
     return max(cfg.train.tau_min, cfg.train.tau_decay**epoch_index)
 
@@ -97,6 +128,8 @@ def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
     device = _select_device(cfg.device)
     output_dir = Path(cfg.train.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    _log_device("train", cfg.device, device, method=method)
+    _write_device_info(output_dir / "device_info.json", cfg.device, device)
 
     train_H, val_H, _ = build_datasets(cfg)
     train_loader = make_loader(train_H, cfg.train.batch_size, shuffle=True, seed=cfg.seed)
@@ -203,6 +236,8 @@ def evaluate_checkpoints(cfg: ExperimentConfig, checkpoints: Mapping[str, str | 
     device = _select_device(cfg.device)
     output_dir = Path(cfg.train.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    _log_device("evaluate", cfg.device, device)
+    _write_device_info(output_dir / "device_info.json", cfg.device, device)
 
     _, _, test_H = build_datasets(cfg)
     test_loader = make_loader(test_H, cfg.train.batch_size, shuffle=False, seed=cfg.seed + 2)
