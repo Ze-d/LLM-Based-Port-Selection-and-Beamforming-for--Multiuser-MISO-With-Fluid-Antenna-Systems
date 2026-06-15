@@ -25,7 +25,7 @@ def main() -> None:
     parser.add_argument(
         "--methods",
         default="proposed",
-        help="Comma-separated trainable methods. Supported: proposed, transformer.",
+        help="Comma-separated trainable methods. Supported: random, cnn, transformer, llm_sequential, proposed.",
     )
     parser.add_argument(
         "--device",

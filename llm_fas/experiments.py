@@ -19,13 +19,17 @@ def parse_seed_list(raw: str) -> list[int]:
 
 
 def parse_method_list(raw: str) -> list[str]:
-    methods = [part.strip().lower() for part in raw.split(",") if part.strip()]
+    aliases = {"llm-sequential": "llm_sequential"}
+    methods = [aliases.get(part.strip().lower(), part.strip().lower()) for part in raw.split(",") if part.strip()]
     if not methods:
         raise ValueError("At least one trainable method must be provided")
-    supported = {"proposed", "transformer", "random"}
+    supported = {"cnn", "llm_sequential", "proposed", "transformer", "random"}
     invalid = [method for method in methods if method not in supported]
     if invalid:
-        raise ValueError(f"Unsupported method(s): {', '.join(invalid)}. Supported methods: proposed, transformer, random")
+        raise ValueError(
+            f"Unsupported method(s): {', '.join(invalid)}. "
+            "Supported methods: cnn, llm_sequential, proposed, transformer, random"
+        )
     return methods
 
 

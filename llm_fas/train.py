@@ -12,10 +12,18 @@ import torch
 from llm_fas.baselines import RandomBaselineModel, evaluate_random_baseline, evaluate_random_baseline_mlp
 from llm_fas.config import ExperimentConfig
 from llm_fas.data import build_datasets, make_loader
-from llm_fas.models import JointFASModelBase, ProposedLLMFASModel, TransformerBaselineModel
+from llm_fas.models import (
+    CNNBaselineModel,
+    JointFASModelBase,
+    LLMSequentialBaselineModel,
+    ProposedLLMFASModel,
+    TransformerBaselineModel,
+)
 
 
 MODEL_REGISTRY = {
+    "cnn": CNNBaselineModel,
+    "llm_sequential": LLMSequentialBaselineModel,
     "proposed": ProposedLLMFASModel,
     "transformer": TransformerBaselineModel,
     "random": RandomBaselineModel,
@@ -45,7 +53,7 @@ RESULT_FIELDNAMES = [
     "test_sum_rate",
 ]
 
-EVALUATION_METHOD_ORDER = ["transformer", "proposed"]
+EVALUATION_METHOD_ORDER = ["cnn", "transformer", "llm_sequential", "proposed"]
 
 
 def _set_seeds(seed: int) -> None:

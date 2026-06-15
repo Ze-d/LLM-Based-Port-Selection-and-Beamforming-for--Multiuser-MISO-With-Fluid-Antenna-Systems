@@ -38,6 +38,14 @@ def test_parse_method_list_accepts_random_as_trainable_method():
     assert "proposed" in result
 
 
+def test_parse_method_list_accepts_paper_baselines():
+    assert parse_method_list("cnn,llm-sequential,llm_sequential") == [
+        "cnn",
+        "llm_sequential",
+        "llm_sequential",
+    ]
+
+
 def test_parse_method_list_rejects_unknown_method():
     with pytest.raises(ValueError, match="Unsupported method"):
         parse_method_list("unknown,proposed")

@@ -6,7 +6,7 @@ import torch
 from transformers import GPT2Config, GPT2Model
 
 from llm_fas.config import load_config
-from llm_fas.models import ProposedLLMFASModel, TransformerBaselineModel
+from llm_fas.models import CNNBaselineModel, LLMSequentialBaselineModel, ProposedLLMFASModel, TransformerBaselineModel
 from llm_fas.physics import dbm_to_watt, generate_channels
 
 
@@ -188,3 +188,45 @@ def test_transformer_baseline_hard_inference_returns_unique_ports():
     for ports in out["ports"].tolist():
         assert len(set(ports)) == cfg.system.n_active
     assert torch.isfinite(out["rate"]).all()
+
+
+def test_cnn_baseline_forward_returns_expected_tensors():
+    cfg = _tiny_cfg()
+    H = generate_channels(
+        num_samples=2,
+        K=cfg.system.K,
+        Nx=cfg.system.Nx,
+        Ny=cfg.system.Ny,
+        W_lambda_x=cfg.system.W_lambda_x,
+        W_lambda_y=cfg.system.W_lambda_y,
+        distance_km=cfg.system.distance_km,
+        seed=104,
+    )
+
+    model = CNNBaselineModel(cfg)
+    out = model(H, tau=1.0, training=True)
+
+    _assert_joint_model_contract(out, batch_size=2, cfg=cfg)
+    assert out["selection_mode"] == "soft"
+
+
+def test_llm_sequential_baseline_forward_returns_expected_tensors(monkeypatch):
+    monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
+    cfg = _tiny_cfg()
+    H = generate_channels(
+        num_samples=2,
+        K=cfg.system.K,
+        Nx=cfg.system.Nx,
+        Ny=cfg.system.Ny,
+        W_lambda_x=cfg.system.W_lambda_x,
+        W_lambda_y=cfg.system.W_lambda_y,
+        distance_km=cfg.system.distance_km,
+        seed=105,
+    )
+
+    model = LLMSequentialBaselineModel(cfg)
+    out = model(H, tau=1.0, training=True)
+
+    _assert_joint_model_contract(out, batch_size=2, cfg=cfg)
+    assert out["selection_mode"] == "soft"
+    assert not any(param.requires_grad for param in model.power_head.parameters())
