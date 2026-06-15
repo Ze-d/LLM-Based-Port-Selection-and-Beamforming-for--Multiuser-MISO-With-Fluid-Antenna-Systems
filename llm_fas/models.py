@@ -27,8 +27,9 @@ class JointFASModelBase(nn.Module):
         self.noise_power = noise_power_watt(cfg.system.noise_psd_dBm_per_Hz, cfg.system.bandwidth_Hz)
         self.d_llm = int(d_llm)
 
-        self.real_proj = nn.Linear(self.N, cfg.model.d_mha)
-        self.imag_proj = nn.Linear(self.N, cfg.model.d_mha)
+        # FC1 (paper): flattens K*N → K*d_mha for cross-port interaction
+        self.fc1_real = nn.Linear(self.K * self.N, self.K * cfg.model.d_mha)
+        self.fc1_imag = nn.Linear(self.K * self.N, self.K * cfg.model.d_mha)
         self.real_mha = nn.MultiheadAttention(cfg.model.d_mha, cfg.model.mha_heads, batch_first=True)
         self.imag_mha = nn.MultiheadAttention(cfg.model.d_mha, cfg.model.mha_heads, batch_first=True)
         self.embed_token_proj = nn.Linear(cfg.model.d_mha, self.d_llm)
@@ -50,8 +51,12 @@ class JointFASModelBase(nn.Module):
         return encoding
 
     def _preprocess(self, H: torch.Tensor) -> torch.Tensor:
-        real_tokens = self.real_proj(H.real.float())
-        imag_tokens = self.imag_proj(H.imag.float())
+        B = H.shape[0]
+        # Paper: flatten CSI into h_real, h_imag ∈ R^{K*N}, then FC1 → R^{K×dmha}
+        h_real_flat = H.real.float().reshape(B, self.K * self.N)
+        h_imag_flat = H.imag.float().reshape(B, self.K * self.N)
+        real_tokens = self.fc1_real(h_real_flat).reshape(B, self.K, self.cfg.model.d_mha)
+        imag_tokens = self.fc1_imag(h_imag_flat).reshape(B, self.K, self.cfg.model.d_mha)
         real_attn, _ = self.real_mha(real_tokens, real_tokens, real_tokens, need_weights=False)
         imag_attn, _ = self.imag_mha(imag_tokens, imag_tokens, imag_tokens, need_weights=False)
         features = torch.cat([real_attn, imag_attn], dim=1)  # B, 2*K, d_mha
