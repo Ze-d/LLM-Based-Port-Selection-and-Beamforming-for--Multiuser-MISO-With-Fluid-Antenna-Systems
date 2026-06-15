@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import math
 from typing import Literal
 
 import torch
@@ -36,6 +37,18 @@ class JointFASModelBase(nn.Module):
         self.port_head = nn.Linear(self.sequence_length * self.d_llm, self.n_active * self.N)
         self.power_head = nn.Linear(self.sequence_length * self.d_llm, 2 * self.K)
 
+    @staticmethod
+    def _make_sinusoidal_position_encoding(sequence_length: int, d_model: int) -> torch.Tensor:
+        position = torch.arange(sequence_length, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model)
+        )
+        encoding = torch.zeros(1, sequence_length, d_model)
+        encoding[0, :, 0::2] = torch.sin(position * div_term)
+        if d_model > 1:
+            encoding[0, :, 1::2] = torch.cos(position * div_term[: encoding[0, :, 1::2].shape[-1]])
+        return encoding
+
     def _preprocess(self, H: torch.Tensor) -> torch.Tensor:
         real_tokens = self.real_proj(H.real.float())
         imag_tokens = self.imag_proj(H.imag.float())
@@ -44,7 +57,12 @@ class JointFASModelBase(nn.Module):
         features = torch.cat([real_attn, imag_attn], dim=1)  # B, 2*K, d_mha
         tokens = self.embed_token_proj(features)  # B, 2*K, d_llm
         agg = F.softmax(self.embed_agg, dim=-1)  # 1, Nn, 2K
-        return agg @ tokens  # B, Nn, d_llm
+        embeddings = agg @ tokens  # B, Nn, d_llm
+        # Positional encoding (paper Eq. 13-14): Hem = Hfc2 + Hpe
+        position_encoding = self._make_sinusoidal_position_encoding(
+            self.sequence_length, self.d_llm
+        ).to(device=embeddings.device, dtype=embeddings.dtype)
+        return embeddings + position_encoding
 
     def _run_backbone(self, embeddings: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
@@ -131,11 +149,6 @@ class ProposedLLMFASModel(JointFASModelBase):
 class TransformerBaselineModel(JointFASModelBase):
     def __init__(self, cfg: ExperimentConfig):
         super().__init__(cfg, d_llm=cfg.model.d_mha)
-        self.register_buffer(
-            "position_encoding",
-            self._make_sinusoidal_position_encoding(self.sequence_length, self.d_llm),
-            persistent=False,
-        )
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.d_llm,
             nhead=cfg.model.mha_heads,
@@ -146,18 +159,5 @@ class TransformerBaselineModel(JointFASModelBase):
         )
         self.backbone = nn.TransformerEncoder(encoder_layer, num_layers=cfg.model.gpt2_layers)
 
-    @staticmethod
-    def _make_sinusoidal_position_encoding(sequence_length: int, d_model: int) -> torch.Tensor:
-        positions = torch.arange(sequence_length, dtype=torch.float32).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2, dtype=torch.float32) * (-torch.log(torch.tensor(10000.0)) / d_model)
-        )
-        encoding = torch.zeros(1, sequence_length, d_model)
-        encoding[0, :, 0::2] = torch.sin(positions * div_term)
-        if d_model > 1:
-            encoding[0, :, 1::2] = torch.cos(positions * div_term[: encoding[0, :, 1::2].shape[-1]])
-        return encoding
-
     def _run_backbone(self, embeddings: torch.Tensor) -> torch.Tensor:
-        position_encoding = self.position_encoding.to(device=embeddings.device, dtype=embeddings.dtype)
-        return self.backbone(embeddings + position_encoding)
+        return self.backbone(embeddings)
