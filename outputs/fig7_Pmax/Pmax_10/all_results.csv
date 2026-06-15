@@ -1,0 +1,4 @@
+method,selection_mode,K,Nx,Ny,N,n_active,W_lambda_x,W_lambda_y,Pmax_dBm,distance_km,seed,train_samples,val_samples,test_samples,epochs,batch_size,gpt2_layers,d_mha,mha_heads,test_sum_rate
+random,hard,3,4,4,16,4,2.0,2.0,10.0,0.2,20260606,10000,2000,1000,200,100,6,768,8,10.218893051147461
+transformer,hard,3,4,4,16,4,2.0,2.0,10.0,0.2,20260606,10000,2000,1000,200,100,6,768,8,10.117932006835938
+proposed,hard,3,4,4,16,4,2.0,2.0,10.0,0.2,20260606,10000,2000,1000,200,100,6,768,8,10.109585205078124
