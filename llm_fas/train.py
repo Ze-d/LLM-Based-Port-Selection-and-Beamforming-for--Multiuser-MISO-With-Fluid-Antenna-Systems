@@ -140,6 +140,8 @@ def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
     history: list[dict[str, float | int]] = []
     checkpoint_path = output_dir / f"{method}.pt"
     best_val_rate = -float("inf")
+    patience = 10
+    no_improve = 0
 
     for epoch in range(cfg.train.epochs):
         model.train()
@@ -166,7 +168,13 @@ def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
         history.append({"epoch": epoch + 1, "train_loss": train_loss, "val_loss": val_loss})
         if val_rate > best_val_rate:
             best_val_rate = val_rate
+            no_improve = 0
             torch.save(model.state_dict(), checkpoint_path)
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"[llm_fas] Early stopping at epoch {epoch + 1} (no improvement for {patience} epochs)")
+                break
 
     _write_history(output_dir / f"{method}_train_history.csv", history)
     if method == "proposed":
