@@ -22,10 +22,10 @@ def parse_method_list(raw: str) -> list[str]:
     methods = [part.strip().lower() for part in raw.split(",") if part.strip()]
     if not methods:
         raise ValueError("At least one trainable method must be provided")
-    supported = {"proposed", "transformer"}
+    supported = {"proposed", "transformer", "random"}
     invalid = [method for method in methods if method not in supported]
     if invalid:
-        raise ValueError(f"Unsupported method(s): {', '.join(invalid)}. Supported methods: proposed, transformer")
+        raise ValueError(f"Unsupported method(s): {', '.join(invalid)}. Supported methods: proposed, transformer, random")
     return methods
 
 
@@ -195,8 +195,20 @@ def run_seed_experiments(
         if method_values == ["proposed"]:
             checkpoint_path = train_proposed(cfg)
             result_path = evaluate_checkpoint(cfg, checkpoint_path)
+        elif method_values == ["random"]:
+            from llm_fas.train import train_random_baseline as _train_random
+
+            random_ckpt = _train_random(cfg)
+            result_path = evaluate_checkpoints(cfg, {"random": random_ckpt})
         else:
-            checkpoints = {method: train_method(cfg, method) for method in method_values}
+            checkpoints: dict[str, str | Path] = {}
+            for method in method_values:
+                if method == "random":
+                    from llm_fas.train import train_random_baseline as _train_random
+
+                    checkpoints["random"] = _train_random(cfg)
+                else:
+                    checkpoints[method] = train_method(cfg, method)
             result_path = evaluate_checkpoints(cfg, checkpoints)
         all_rows.extend(read_result_rows(result_path))
     return write_aggregate_outputs(all_rows, output_root)

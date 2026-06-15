@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from llm_fas.baselines import evaluate_random_baseline
+from llm_fas.baselines import RandomBaselineModel, evaluate_random_baseline, evaluate_random_baseline_mlp
 from llm_fas.config import ExperimentConfig
 from llm_fas.data import build_datasets, make_loader
 from llm_fas.models import JointFASModelBase, ProposedLLMFASModel, TransformerBaselineModel
@@ -18,6 +18,7 @@ from llm_fas.models import JointFASModelBase, ProposedLLMFASModel, TransformerBa
 MODEL_REGISTRY = {
     "proposed": ProposedLLMFASModel,
     "transformer": TransformerBaselineModel,
+    "random": RandomBaselineModel,
 }
 
 RESULT_FIELDNAMES = [
@@ -140,6 +141,8 @@ def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
     history: list[dict[str, float | int]] = []
     checkpoint_path = output_dir / f"{method}.pt"
     best_val_rate = -float("inf")
+    patience = 10
+    no_improve = 0
 
     for epoch in range(cfg.train.epochs):
         model.train()
@@ -166,12 +169,95 @@ def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
         history.append({"epoch": epoch + 1, "train_loss": train_loss, "val_loss": val_loss})
         if val_rate > best_val_rate:
             best_val_rate = val_rate
+            no_improve = 0
             torch.save(model.state_dict(), checkpoint_path)
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"[llm_fas] Early stopping at epoch {epoch + 1} (no improvement for {patience} epochs)")
+                break
 
     _write_history(output_dir / f"{method}_train_history.csv", history)
     if method == "proposed":
         _write_history(output_dir / "train_history.csv", history)
     return checkpoint_path
+
+
+def train_random_baseline(cfg: ExperimentConfig) -> Path:
+    """Train the random baseline MLP power allocation (paper Section V-A)."""
+    _set_seeds(cfg.seed)
+    device = _select_device(cfg.device)
+    output_dir = Path(cfg.train.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _log_device("train", cfg.device, device, method="random")
+    _write_device_info(output_dir / "device_info.json", cfg.device, device)
+
+    train_H, val_H, _ = build_datasets(cfg)
+    train_loader = make_loader(train_H, cfg.train.batch_size, shuffle=True, seed=cfg.seed)
+    val_loader = make_loader(val_H, cfg.train.batch_size, shuffle=False, seed=cfg.seed + 1)
+
+    model = RandomBaselineModel(cfg).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
+    history: list[dict[str, float | int]] = []
+    checkpoint_path = output_dir / "random.pt"
+    best_val_rate = -float("inf")
+    patience = 10
+    no_improve = 0
+
+    for epoch in range(cfg.train.epochs):
+        model.train()
+        total_loss = 0.0
+        total_samples = 0
+        for (batch,) in train_loader:
+            batch = batch.to(device)
+            # Use different random seed per batch for training diversity
+            out = model(batch, seed=None)
+            loss = -out["rate"].mean()
+            if not torch.isfinite(loss):
+                raise RuntimeError(f"Non-finite training loss at epoch {epoch + 1}: {loss.item()}")
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item() * batch.shape[0]
+            total_samples += batch.shape[0]
+
+        train_loss = total_loss / total_samples
+        # Evaluate with fixed seed for reproducibility
+        val_rate = _evaluate_random_mlp_val(model, val_loader, device, seed=cfg.seed + 1)
+        val_loss = -val_rate
+        if not np.isfinite(train_loss) or not np.isfinite(val_loss):
+            raise RuntimeError(f"Non-finite loss at epoch {epoch + 1}: train={train_loss}, val={val_loss}")
+        history.append({"epoch": epoch + 1, "train_loss": train_loss, "val_loss": val_loss})
+        if val_rate > best_val_rate:
+            best_val_rate = val_rate
+            no_improve = 0
+            torch.save(model.state_dict(), checkpoint_path)
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"[llm_fas] Early stopping at epoch {epoch + 1} (no improvement for {patience} epochs)")
+                break
+
+    _write_history(output_dir / "random_train_history.csv", history)
+    return checkpoint_path
+
+
+def _evaluate_random_mlp_val(
+    model: RandomBaselineModel,
+    loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    seed: int,
+) -> float:
+    model.eval()
+    total_rate = 0.0
+    total_samples = 0
+    with torch.no_grad():
+        for (batch,) in loader:
+            batch = batch.to(device)
+            out = model(batch, seed=seed)
+            total_rate += out["rate"].sum().item()
+            total_samples += batch.shape[0]
+    return total_rate / total_samples
 
 
 def train_proposed(cfg: ExperimentConfig) -> Path:
@@ -242,13 +328,21 @@ def evaluate_checkpoints(cfg: ExperimentConfig, checkpoints: Mapping[str, str | 
     _, _, test_H = build_datasets(cfg)
     test_loader = make_loader(test_H, cfg.train.batch_size, shuffle=False, seed=cfg.seed + 2)
 
-    random_rate = evaluate_random_baseline(test_H.to(device), cfg, seed=cfg.seed + 3)
+    test_device_data = test_H.to(device)
+    # Use MLP-based random baseline if a trained checkpoint is provided,
+    # otherwise fall back to uniform power allocation.
+    random_checkpoint = checkpoints.get("random")
+    if random_checkpoint is not None and Path(random_checkpoint).exists():
+        random_rate = evaluate_random_baseline_mlp(test_device_data, cfg, str(random_checkpoint), seed=cfg.seed + 3)
+    else:
+        random_rate = evaluate_random_baseline(test_device_data, cfg, seed=cfg.seed + 3)
 
     rows = [
         _result_row(cfg, method="random", selection_mode="hard", test_sum_rate=random_rate),
     ]
     tau = cfg.train.tau_min
-    for method in _ordered_methods(list(checkpoints.keys())):
+    trainable_methods = [m for m in _ordered_methods(list(checkpoints.keys())) if m != "random"]
+    for method in trainable_methods:
         checkpoint_path = Path(checkpoints[method])
         if not checkpoint_path.exists():
             raise FileNotFoundError(checkpoint_path)

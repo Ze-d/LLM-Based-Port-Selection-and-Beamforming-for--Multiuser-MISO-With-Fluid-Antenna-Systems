@@ -138,7 +138,7 @@ def test_proposed_model_exposes_trainable_lora_and_layernorm(monkeypatch):
 
     assert any("lora" in name for name in trainable_names)
     assert any("ln_" in name for name in trainable_names)
-    assert any("real_proj" in name for name in trainable_names)
+    assert any("fc1_real" in name for name in trainable_names)
     assert all(math.isfinite(param.detach().float().abs().mean().item()) for _, param in model.named_parameters())
 
 
