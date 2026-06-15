@@ -2,7 +2,7 @@
 
 ## 修复内容回顾
 
-基于与论文 [Guo et al., 2026] 的逐项对比，修复了 4 个差异点：
+基于与论文 [Guo et al., 2026] 的逐项对比，修复了 6 个差异点：
 
 | # | 修复项 | 论文描述 | 修复前 | 修复后 |
 |---|--------|---------|--------|--------|
@@ -10,6 +10,8 @@
 | 2 | 输入投影 | FC1: `h_real ∈ R^{KN} → R^{K×dmha}` | 逐端口 Linear(N, dmha) | flatten 后 FC1(K*N, K*dmha) |
 | 3 | Early Stopping | patience=10, 监控 val loss | 无，训练满 200 epochs | 10 epoch 无提升即停止 |
 | 4 | Random 基线 | Random 端口 + MLP 学功率分配 | 均匀功率 p=q=Pmax/K | MLP(256→128→2K) 学 p,q |
+| 5 | 验证选择模式 | Section IV-C: 仅推理时用 hard，训练/验证用 soft Gumbel-Sinkhorn | 验证使用 hard top-k 选择 | 验证使用 soft Gumbel-Sinkhorn |
+| 6 | τ 退火索引 | τ = max(0.1, 0.95^epoch)，epoch 为当前轮次(1-indexed) | 0-indexed，τ₀=1.0 | 1-indexed，τ₁=0.95 |
 
 ---
 
@@ -176,6 +178,20 @@ python scripts/run_fig5_convergence.py \
   --device cuda
 ```
 
+**生成图表：**
+```bash
+python scripts/plot_fig5.py
+```
+
+输出：
+- `outputs/fig5_convergence_fixed.pdf/png` — 三子图并排
+- `outputs/fig5_combined.pdf/png` — 六条曲线合一（推荐查看）
+
+**预期的收敛行为（修复后）：**
+- Train 和 Val 曲线在前 5-10 epoch 快速同步下降
+- 之后逐渐平稳收敛
+- Train-Val gap 很小，与论文 Fig.5 一致
+
 ---
 
 ### Step 5: Fig.6-10 参数扫描（完整论文复现）
@@ -309,9 +325,15 @@ epoch,train_loss,val_loss
 
 **症状：** 训练在 epoch 11 就停止了
 
-**分析：** 正常行为。如果模型在 10 个 epoch 内没有改善，训练自动停止。这是论文指定的行为（patience=10）。
+**分析：** Early Stopping 的 patience=10。修复后验证使用 soft Gumbel-Sinkhorn，val loss 应与 train loss 同步平滑下降，Early Stopping 应在模型真正收敛时才触发。如果仍过早停止，说明模型在当前配置下已快速收敛到上限。
 
-### 5. 与论文结果差异仍然存在
+### 5. 验证曲线呈 V 形（Epoch 1 最高，之后下降）
+
+**症状：** Val loss 在 epoch 1 最高（最差），之后骤降走平
+
+**分析：** 这可能是旧版代码（修复前）的遗留问题，当时验证使用了 hard top-k 选择。修复后（Fix 5-6）验证改用 soft Gumbel-Sinkhorn，val 曲线应与 train 曲线同步平滑下降。如仍出现 V 形，请确认代码已更新到最新 commit。
+
+### 6. 与论文结果差异仍然存在
 
 如果修复后结果仍然不理想：
 
