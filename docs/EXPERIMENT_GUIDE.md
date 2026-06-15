@@ -1,121 +1,352 @@
-﻿# 实验操作指南
+# 实验操作指南
 
-在 GPU 机器上拉取代码后，按以下步骤执行实验。
+## 修复内容回顾
 
-## 前置条件
+基于与论文 [Guo et al., 2026] 的逐项对比，修复了 4 个差异点：
 
-- Python 3.12+（当前开发环境 3.14，建议 3.12）
-- [uv](https://docs.astral.sh/uv/) 包管理器
-- GPU 推荐 >= 8GB 显存（代码也支持 CPU，但会非常慢）
+| # | 修复项 | 论文描述 | 修复前 | 修复后 |
+|---|--------|---------|--------|--------|
+| 1 | 位置编码 | Eq.(13)-(14): `H_em = H_fc2 + H_pe` | 无 PE | `_preprocess` 中加入正弦 PE |
+| 2 | 输入投影 | FC1: `h_real ∈ R^{KN} → R^{K×dmha}` | 逐端口 Linear(N, dmha) | flatten 后 FC1(K*N, K*dmha) |
+| 3 | Early Stopping | patience=10, 监控 val loss | 无，训练满 200 epochs | 10 epoch 无提升即停止 |
+| 4 | Random 基线 | Random 端口 + MLP 学功率分配 | 均匀功率 p=q=Pmax/K | MLP(256→128→2K) 学 p,q |
 
-## 1. 拉取代码
+---
 
-```bash
-git clone <repo-url>
-cd "LLM-Based Port Selection and Beamforming for  Multiuser MISO With Fluid Antenna Systems"
-git checkout mvp-reproduction
-```
+## 环境准备
 
-## 2. 环境验证（5 分钟）
+### 硬件要求
 
-在 GPU 机器上，不要直接依赖 `uv run --with torch` 做论文实验；该写法可能解析到 CPU-only PyTorch。先创建项目虚拟环境，并安装 CUDA-enabled PyTorch：
+- **GPU**: NVIDIA GPU with >= 8GB VRAM（推荐 RTX 4060 或更高）
+  - Small-scale 实验 (MVP)：4GB VRAM 足够
+  - Full-scale 实验 (Paper)：需要 8GB+ VRAM
+- **CPU**: 任意现代多核 CPU
+- **Disk**: ~5GB（模型权重 + 数据集缓存）
 
-```bash
-uv venv
-uv pip install numpy scipy pyyaml matplotlib tqdm pytest transformers peft
-# 按 GPU 机器的 CUDA/驱动版本选择 PyTorch 官方 CUDA wheel index；下面以 cu128 为例。
-uv pip install torch --index-url https://download.pytorch.org/whl/cu128
-```
-
-然后确认当前 `torch` 能看到 GPU：
+### 软件依赖
 
 ```bash
-uv run python -c "import torch; print('torch=', torch.__version__); print('cuda_available=', torch.cuda.is_available()); print('torch_cuda=', torch.version.cuda); print('device=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
+pip install torch transformers peft pyyaml pytest accelerate safetensors
 ```
 
-预期：`cuda_available=True`，并打印 GPU 名称。
-
-如果这里是 `False`，后续 `device: auto` 会自动退回 CPU；下面命令使用 `--device cuda`，会在 CUDA 不可用时直接失败，避免静默跑 CPU。
+### 验证安装
 
 ```bash
-uv run python -m pytest tests/ -q
+python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}'); print(f'Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"CPU\"}')"
+python -m pytest tests/ -v --tb=short
 ```
 
-预期：`45 passed`
+预期输出：46 个测试全部通过。
 
-## 3. 小规模 Smoke（10-20 分钟 CPU / 2-5 分钟 GPU）
+---
+
+## 配置文件说明
+
+项目提供 5 个预设配置，按数据规模和用途分类：
+
+| 配置文件 | 用途 | 数据量(train/val/test) | Epochs | Batch | GPT-2层 | d_mha | 预计时长 |
+|---------|------|----------------------|--------|-------|---------|-------|---------|
+| `mvp.yaml` | 快速开发/调试 | 1000/200/200 | 20 | 16 | 2 | 128 | ~2分钟 |
+| `paper_smoke.yaml` | 论文规模冒烟测试 | 2000/400/400 | 5 | 16 | 6 | 768 | ~5分钟 |
+| `paper_training_smoke.yaml` | 最简训练冒烟 | 64/32/32 | 2 | 8 | 6 | 768 | ~30秒 |
+| `paper_default.yaml` | **完整论文复现** | 10000/2000/1000 | 200 | 100 | 6 | 768 | ~2-4小时 |
+| `fig5_smoke.yaml` | Fig.5收敛冒烟 | 200/40/40 | 5 | 8 | 6 | 768 | ~1分钟 |
+
+**推荐实验顺序：冒烟测试 -> 小规模验证 -> 完整复现**
+
+---
+
+## 实验流程
+
+### Step 1: 最简冒烟测试（验证修复生效）
+
+目的是快速验证代码修改后能正常运行。使用 `paper_training_smoke.yaml`。
 
 ```bash
-uv run python scripts/run_stage3_transformer.py --config configs/paper_smoke.yaml --methods proposed --output-root outputs/paper_smoke_test --seeds 20260606 --device cuda
+python scripts/run_stage3_extended.py \
+  --config configs/paper_training_smoke.yaml \
+  --seeds 20260606 \
+  --methods random,proposed \
+  --output-root outputs/smoke_test_fixed
 ```
 
-检查 `outputs/paper_smoke_test/all_results.csv` 有 `random` 和 `proposed` 两行。
-训练启动时会打印 `requested_device=cuda resolved_device=cuda` 和 GPU 名称；每个 seed 输出目录也会写入 `device_info.json`。
+预期输出文件：
 
-## 4. 论文主配置训练
+```
+outputs/smoke_test_fixed/
+├── all_results.csv          # 所有 seed 的详细结果
+├── summary.csv               # 汇总统计
+└── seed_20260606/
+    ├── config_snapshot.yaml
+    ├── device_info.json
+    ├── random.pt             # Random 基线 MLP checkpoint
+    ├── random_train_history.csv
+    ├── proposed.pt           # Proposed 模型 checkpoint
+    ├── proposed_train_history.csv
+    ├── train_history.csv
+    └── results.csv
+```
 
-### 4.1 单点验证（最先跑）
+查看结果：
 
 ```bash
-uv run python scripts/run_stage3_transformer.py --config configs/paper_default.yaml --methods proposed --output-root outputs/paper_default_seed20260606 --seeds 20260606 --device cuda
+cat outputs/smoke_test_fixed/summary.csv
 ```
 
-配置：d_mha=768, 6层GPT-2, LoRA rank=4, batch=100, train=10000, 200 epochs。
-预计：GPU 1-3h, CPU ~30h。
+**关键检查项：**
+- [ ] `random` 行存在且 `test_sum_rate` 合理（应 > 0）
+- [ ] `proposed` 行存在且 `test_sum_rate` 合理
+- [ ] 训练在 2 epochs 内完成，无报错
 
-### 4.2 Fig.5 收敛曲线
+---
+
+### Step 2: 小规模 3-Seed 稳定性验证
+
+使用 `mvp.yaml`（small-scale），3 个种子，包含 Random、Transformer、Proposed 三种方法。
 
 ```bash
-uv run python scripts/run_fig5_convergence.py --config configs/paper_default.yaml --output-root outputs/fig5_convergence --seeds 20260606 --device cuda
+python scripts/run_stage3_extended.py \
+  --config configs/mvp.yaml \
+  --seed-count 3 \
+  --seeds 20260606,20260607,20260608 \
+  --methods random,transformer,proposed \
+  --output-root outputs/stage3_fixed_3seed
 ```
 
-依次训练 bs=50/100/200 各 200 epochs。预计 GPU 4-8h, CPU ~107h。
-先用 `--dry-run` 预览不启动训练。
-
-### 4.3 多 seed 验证
+查看汇总结果：
 
 ```bash
-uv run python scripts/run_stage3_extended.py --config configs/paper_default.yaml --methods transformer,proposed --seed-count 5 --output-root outputs/paper_5seed --device cuda
+cat outputs/stage3_fixed_3seed/summary.csv
 ```
 
-## 5. 结果文件
+**关键检查项：**
+- [ ] `proposed.mean_test_sum_rate` > `random.mean_test_sum_rate`
 
-每个实验输出目录结构：
+**对比修复前 baseline：**
 
-```
-outputs/<name>/
-  all_results.csv          # 汇总所有 seed 的结果
-  summary.csv              # 按方法聚合的均值和标准差
-  seed_<seed>/
-    config_snapshot.yaml   # 本 seed 实际配置
-    device_info.json       # requested/resolved device 和 CUDA 信息
-    proposed.pt            # best-val checkpoint (gitignore 排除)
-    proposed_train_history.csv  # epoch, train_loss, val_loss
-    results.csv            # 本 seed 结果
-```
+| 指标 | 修复前 (stage3_transformer_3seed) | 修复后 (预期) |
+|------|----------------------------------|--------------|
+| Proposed vs Random 胜场 | 2/3 | >= 2/3，均值差距应增大 |
+| Proposed 均值 | 19.31 | 应更高 |
 
-`all_results.csv` 字段：method, selection_mode, K, Nx, Ny, N, n_active, W_lambda_x, W_lambda_y, Pmax_dBm, distance_km, seed, train_samples, val_samples, test_samples, epochs, batch_size, gpt2_layers, d_mha, mha_heads, test_sum_rate
+---
 
-## 6. 快速分析
+### Step 3: 完整论文规模复现
+
+使用 `paper_default.yaml`（full-scale），5 个种子，对比三种方法。
 
 ```bash
-uv run python -c "
-import csv, statistics
-from pathlib import Path
-rows = list(csv.DictReader(Path('outputs/<exp>/all_results.csv').open()))
-by = {}
-for r in rows:
-    by.setdefault(r['method'], []).append(float(r['test_sum_rate']))
-for m, v in by.items():
-    print(f'{m}: mean={statistics.mean(v):.4f} std={statistics.stdev(v) if len(v)>1 else 0:.4f} n={len(v)}')
-"
+python scripts/run_stage3_extended.py \
+  --config configs/paper_default.yaml \
+  --seed-count 5 \
+  --seeds 20260606,20260607,20260608,20260609,20260610 \
+  --methods random,transformer,proposed \
+  --output-root outputs/paper_fixed_5seed
 ```
 
-## 7. 注意事项
+**预计时长：** 每个种子约 1-2 小时（RTX 4060），总计 5-10 小时。
 
-- 首次运行会下载 GPT-2 模型（~500MB），需网络
-- `.pt` checkpoint 被 gitignore，新机器需重新训练
-- 数据集基于 seed 确定性生成，同 config+seed 跨机器可复现
-- LoRA 挂在 GPT-2 `c_attn`（QKV 合并），非论文严格 Q/V-only 版
-- CNN 和 LLM-sequential baseline 尚未实现（Stage 5）
-- `paper_default.yaml` 未配置 early stopping（当前为固定 200 epochs）
+后台运行：
+
+```bash
+# Windows PowerShell
+Start-Process python -ArgumentList "scripts/run_stage3_extended.py --config configs/paper_default.yaml --seed-count 5 --methods random,transformer,proposed --output-root outputs/paper_fixed_5seed" -NoNewWindow -RedirectStandardOutput outputs/paper_fixed_5seed.log
+```
+
+查看结果：
+
+```bash
+cat outputs/paper_fixed_5seed/summary.csv
+```
+
+**关键检查项：**
+- [ ] `proposed.mean_test_sum_rate` 在 5 种子平均下显著优于 Random
+- [ ] `proposed.wins_vs_random` >= 4（5 个种子中至少赢 4 个）
+- [ ] Early Stopping 可能在 200 epochs 前停止（正常行为）
+
+---
+
+### Step 4: Fig.5 收敛曲线对比（可选）
+
+```bash
+python scripts/run_fig5_convergence.py \
+  --config configs/paper_default.yaml \
+  --seeds 20260606 \
+  --output-root outputs/fig5_fixed \
+  --device cuda
+```
+
+---
+
+### Step 5: Fig.6-10 参数扫描（完整论文复现）
+
+论文各图需要扫描不同的系统参数。由于实验框架从配置文件读取参数，建议为每组参数值创建独立配置文件，然后运行。
+
+以 **Fig.7 (Pmax 扫描)** 为例：
+
+```bash
+# 1. 创建参数配置文件
+for pmax in 10 15 20 25 30; do
+  sed "s/Pmax_dBm: 20.0/Pmax_dBm: ${pmax}.0/" configs/paper_default.yaml > configs/paper_pmax${pmax}.yaml
+  # 修改 output_dir
+done
+
+# 2. 运行每个参数
+for pmax in 10 15 20 25 30; do
+  python scripts/run_stage3_extended.py \
+    --config configs/paper_pmax${pmax}.yaml \
+    --seeds 20260606 \
+    --methods random,transformer,proposed \
+    --output-root outputs/fig7_Pmax/Pmax_${pmax}
+done
+```
+
+**各图参数取值：**
+
+| Figure | 参数 | 取值列表 |
+|--------|------|---------|
+| Fig.6 (Wx) | system.W_lambda_x, system.W_lambda_y | [0.5, 1.0, 1.5, 2.0, 2.5, 3.0] |
+| Fig.7 (Pmax) | system.Pmax_dBm | [10, 15, 20, 25, 30] |
+| Fig.8 (n) | system.n_active | [3, 4, 5, 6] |
+| Fig.9 (d) | system.distance_km | [0.1, 0.15, 0.2, 0.25, 0.3] |
+| Fig.10 (N) | system.Nx x system.Ny | [(3,3), (4,4), (5,5), (6,6)] |
+
+---
+
+## 新增功能：Random 基线 MLP 训练
+
+修复后，Random 基线可以使用 MLP 学习功率分配。
+
+### 单独训练 Random 基线
+
+```bash
+python scripts/run_stage3_extended.py \
+  --config configs/mvp.yaml \
+  --seeds 20260606 \
+  --methods random \
+  --output-root outputs/random_mlp_test
+```
+
+### 同时训练 Random + Proposed
+
+```bash
+python scripts/run_stage3_extended.py \
+  --config configs/mvp.yaml \
+  --seeds 20260606 \
+  --methods random,proposed \
+  --output-root outputs/random_proposed_test
+```
+
+当 `--methods` 包含 `random` 时，evaluation 会自动使用训练好的 MLP。如果 `--methods` 不包含 `random`，则回退到均匀功率分配（向后兼容）。
+
+---
+
+## 结果文件格式
+
+### results.csv（单种子）
+
+```csv
+method,selection_mode,K,Nx,Ny,N,n_active,...,test_sum_rate
+random,hard,3,4,4,16,4,...,19.244
+transformer,hard,3,4,4,16,4,...,19.324
+proposed,hard,3,4,4,16,4,...,19.350
+```
+
+### summary.csv（多种子汇总）
+
+```csv
+method,selection_mode,num_seeds,mean_test_sum_rate,std_test_sum_rate,min_test_sum_rate,max_test_sum_rate,wins_vs_random
+proposed,hard,5,19.350,0.15,19.100,19.500,4
+random,hard,5,19.200,0.12,19.050,19.350,0
+transformer,hard,5,19.280,0.10,19.120,19.400,3
+```
+
+### train_history.csv（训练曲线）
+
+```csv
+epoch,train_loss,val_loss
+1,-15.13,-18.93
+2,-18.49,-19.12
+...
+```
+
+列含义：
+- `train_loss` = 负 sum_rate（训练集），越小越好（即 sum_rate 越大越好）
+- `val_loss` = 负 sum_rate（验证集），使用 hard 端口选择
+
+---
+
+## 常见问题与排查
+
+### 1. CUDA Out of Memory
+
+**症状：** `RuntimeError: CUDA out of memory`
+
+**解决：**
+- 减少 `batch_size`：修改配置文件中的 `train.batch_size`
+- 使用 MVP 配置（2层 GPT-2, 128维，仅需 4GB VRAM）
+- 使用 CPU 训练：`--device cpu`
+
+### 2. GPT-2 模型下载失败
+
+**症状：** `OSError: Can't load tokenizer for 'gpt2'`
+
+**解决：**
+- 确保网络连接正常
+- PowerShell: `$env:HF_ENDPOINT="https://hf-mirror.com"`
+- Bash: `export HF_ENDPOINT=https://hf-mirror.com`
+
+### 3. Loss 为 NaN 或 Infinity
+
+**症状：** `RuntimeError: Non-finite training loss`
+
+**解决：**
+- 确认 learning rate = 1e-6（论文默认值）
+- 尝试 `--device cpu` 排除 GPU 问题
+- 检查 Sinkhorn 迭代是否数值稳定
+
+### 4. Early Stopping 过早触发
+
+**症状：** 训练在 epoch 11 就停止了
+
+**分析：** 正常行为。如果模型在 10 个 epoch 内没有改善，训练自动停止。这是论文指定的行为（patience=10）。
+
+### 5. 与论文结果差异仍然存在
+
+如果修复后结果仍然不理想：
+
+| 调整项 | 当前值 | 建议尝试 |
+|--------|--------|---------|
+| LoRA rank | 4 | 8 或 16 |
+| tau_min | 0.1 | 0.01 |
+| lr | 1e-6 | 5e-6 或 1e-5 |
+| gpt2_layers | 6 | 8 或全部 12 层 |
+| lora_target | ["c_attn"] | ["c_attn","c_fc","c_proj"] |
+| 端口空间 N | 16 (4x4) | 36 (6x6) 或 49 (7x7) |
+
+---
+
+## 快速参考
+
+```bash
+# 冒烟测试（最快，约30秒）
+python scripts/run_stage3_extended.py --config configs/paper_training_smoke.yaml --seeds 20260606 --methods random,proposed --output-root outputs/quick_test
+
+# 小规模实验（约5分钟，三种方法对比）
+python scripts/run_stage3_extended.py --config configs/mvp.yaml --seed-count 3 --methods random,transformer,proposed --output-root outputs/small_test
+
+# 完整论文复现（约5-10小时，5 seeds）
+python scripts/run_stage3_extended.py --config configs/paper_default.yaml --seed-count 5 --methods random,transformer,proposed --output-root outputs/full_paper
+
+# 单种子训练+评估
+python scripts/train_mvp.py --config configs/paper_default.yaml --device cuda
+python scripts/evaluate_mvp.py --config configs/paper_default.yaml --checkpoint outputs/paper_default_seed20260606/proposed.pt --device cuda
+
+# 运行全部测试
+python -m pytest tests/ -v
+
+# 查看帮助
+python scripts/run_stage3_extended.py --help
+python scripts/train_mvp.py --help
+python scripts/evaluate_mvp.py --help
+```
