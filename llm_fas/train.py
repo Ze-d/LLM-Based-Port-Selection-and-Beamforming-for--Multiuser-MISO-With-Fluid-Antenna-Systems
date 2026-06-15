@@ -93,7 +93,8 @@ def _write_device_info(path: Path, requested_device: str, resolved_device: torch
 
 
 def _tau_for_epoch(cfg: ExperimentConfig, epoch_index: int) -> float:
-    return max(cfg.train.tau_min, cfg.train.tau_decay**epoch_index)
+    # Paper: τ = max(0.1, 0.95^epoch) where epoch is 1-indexed
+    return max(cfg.train.tau_min, cfg.train.tau_decay**(epoch_index + 1))
 
 
 def build_model(method: str, cfg: ExperimentConfig) -> JointFASModelBase:
@@ -162,7 +163,8 @@ def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
             total_samples += batch.shape[0]
 
         train_loss = total_loss / total_samples
-        val_rate = _evaluate_model_rate(model, val_loader, device, tau, selection_mode="hard")
+        # Paper validates with soft Gumbel-Sinkhorn (hard is only for final inference)
+        val_rate = _evaluate_model_rate(model, val_loader, device, tau, selection_mode="soft")
         val_loss = -val_rate
         if not np.isfinite(train_loss) or not np.isfinite(val_loss):
             raise RuntimeError(f"Non-finite loss at epoch {epoch + 1}: train={train_loss}, val={val_loss}")
