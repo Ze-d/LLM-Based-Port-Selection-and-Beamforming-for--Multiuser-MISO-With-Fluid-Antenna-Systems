@@ -1,0 +1,7 @@
+{
+  "requested_device": "auto",
+  "resolved_device": "cuda",
+  "cuda_available": true,
+  "torch_cuda_version": "12.8",
+  "cuda_device_name": "NVIDIA GeForce RTX 4060"
+}
