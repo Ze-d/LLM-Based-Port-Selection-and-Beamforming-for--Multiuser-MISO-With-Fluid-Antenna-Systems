@@ -32,9 +32,15 @@ def test_parse_method_list_accepts_transformer_and_proposed():
     assert parse_method_list("transformer, proposed") == ["transformer", "proposed"]
 
 
-def test_parse_method_list_rejects_random_as_trainable_method():
+def test_parse_method_list_accepts_random_as_trainable_method():
+    result = parse_method_list("random,proposed")
+    assert "random" in result
+    assert "proposed" in result
+
+
+def test_parse_method_list_rejects_unknown_method():
     with pytest.raises(ValueError, match="Unsupported method"):
-        parse_method_list("random,proposed")
+        parse_method_list("unknown,proposed")
 
 
 def test_clone_config_for_seed_changes_seed_and_output_dir(tmp_path):
