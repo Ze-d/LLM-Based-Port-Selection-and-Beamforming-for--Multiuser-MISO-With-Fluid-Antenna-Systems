@@ -4,7 +4,6 @@ import math
 from typing import Literal
 
 import torch
-from peft import LoraConfig, get_peft_model
 from torch import nn
 from torch.nn import functional as F
 from transformers import GPT2Model
@@ -13,6 +12,54 @@ from llm_fas.beamforming import beamforming_from_pq, sum_rate
 from llm_fas.config import ExperimentConfig
 from llm_fas.physics import dbm_to_watt, noise_power_watt
 from llm_fas.sinkhorn import gumbel_sinkhorn, hard_topk_ports, ports_to_selection_matrix
+
+
+class QVLoraConv1D(nn.Module):
+    """LoRA wrapper for GPT-2 c_attn that updates only Q and V slices."""
+
+    def __init__(self, base_layer: nn.Module, rank: int):
+        super().__init__()
+        if rank <= 0:
+            raise ValueError(f"LoRA rank must be positive, got {rank}")
+        if not hasattr(base_layer, "weight") or not hasattr(base_layer, "bias"):
+            raise TypeError("QVLoraConv1D expects a GPT-2 Conv1D-like layer")
+
+        self.base_layer = base_layer
+        for param in self.base_layer.parameters():
+            param.requires_grad = False
+
+        in_features = int(base_layer.weight.shape[0])
+        out_features = int(base_layer.bias.shape[0])
+        if out_features % 3 != 0:
+            raise ValueError(f"GPT-2 c_attn output features must be divisible by 3, got {out_features}")
+
+        self.hidden_size = out_features // 3
+        self.scaling = 1.0
+        self.lora_q_A = nn.Linear(in_features, rank, bias=False)
+        self.lora_q_B = nn.Linear(rank, self.hidden_size, bias=False)
+        self.lora_v_A = nn.Linear(in_features, rank, bias=False)
+        self.lora_v_B = nn.Linear(rank, self.hidden_size, bias=False)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        nn.init.normal_(self.lora_q_A.weight, std=0.02)
+        nn.init.normal_(self.lora_v_A.weight, std=0.02)
+        nn.init.zeros_(self.lora_q_B.weight)
+        nn.init.zeros_(self.lora_v_B.weight)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        base_out = self.base_layer(x)
+        q_delta = self.lora_q_B(self.lora_q_A(x)) * self.scaling
+        v_delta = self.lora_v_B(self.lora_v_A(x)) * self.scaling
+        h = self.hidden_size
+        return torch.cat(
+            [
+                base_out[..., :h] + q_delta,
+                base_out[..., h : 2 * h],
+                base_out[..., 2 * h :] + v_delta,
+            ],
+            dim=-1,
+        )
 
 
 def _resolve_selection_mode(training: bool, selection_mode: Literal["soft", "hard"] | None) -> Literal["soft", "hard"]:
@@ -177,14 +224,10 @@ class ProposedLLMFASModel(JointFASModelBase):
 
         super().__init__(cfg, d_llm=int(backbone.config.n_embd))
 
-        lora_config = LoraConfig(
-            r=cfg.model.lora_rank,
-            lora_alpha=cfg.model.lora_rank,
-            target_modules=["c_attn"],
-            bias="none",
-            fan_in_fan_out=True,
-        )
-        self.backbone = get_peft_model(backbone, lora_config)
+        for block in backbone.h:
+            block.attn.c_attn = QVLoraConv1D(block.attn.c_attn, rank=cfg.model.lora_rank)
+
+        self.backbone = backbone
         for name, param in self.backbone.named_parameters():
             if "ln_" in name:
                 param.requires_grad = True

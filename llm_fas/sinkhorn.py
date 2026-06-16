@@ -25,8 +25,29 @@ def gumbel_sinkhorn(
 
 
 def hard_topk_ports(scores: torch.Tensor, n_active: int) -> torch.Tensor:
-    per_port_scores = scores.max(dim=1).values
-    return torch.topk(per_port_scores, k=n_active, dim=-1).indices.to(torch.long)
+    """Convert relaxed n x N scores to hard ports using row-wise argmax.
+
+    The paper describes taking argmax over each row of the Sinkhorn output
+    during inference. If two rows pick the same port, repair the duplicate by
+    choosing that row's next-best unused port so the activation constraint still
+    holds.
+    """
+    if scores.ndim != 3:
+        raise ValueError(f"scores must have shape (B, n, N), got {tuple(scores.shape)}")
+    if n_active > scores.shape[1] or n_active > scores.shape[2]:
+        raise ValueError(f"n_active={n_active} is incompatible with scores shape {tuple(scores.shape)}")
+
+    ranked_ports = torch.argsort(scores[:, :n_active, :], dim=-1, descending=True)
+    ports = torch.empty(scores.shape[0], n_active, dtype=torch.long, device=scores.device)
+    for batch_index in range(scores.shape[0]):
+        used: set[int] = set()
+        for row_index in range(n_active):
+            for candidate in ranked_ports[batch_index, row_index].tolist():
+                if candidate not in used:
+                    ports[batch_index, row_index] = candidate
+                    used.add(candidate)
+                    break
+    return ports
 
 
 def ports_to_selection_matrix(ports: torch.Tensor, N: int) -> torch.Tensor:

@@ -1,3 +1,0 @@
-method,K,Nx,Ny,N,n_active,Pmax_dBm,distance_km,seed,test_sum_rate
-random,3,4,4,16,4,20.0,0.2,20260606,19.097673416137695
-proposed,3,4,4,16,4,20.0,0.2,20260606,18.745282649993896

@@ -24,6 +24,19 @@ def test_hard_topk_ports_are_unique():
         assert len(set(row)) == 4
 
 
+def test_hard_topk_ports_prefers_row_argmax_then_repairs_duplicates():
+    scores = torch.zeros(1, 3, 5)
+    scores[0, 0, 0] = 10.0
+    scores[0, 1, 0] = 9.0
+    scores[0, 1, 2] = 8.0
+    scores[0, 2, 2] = 7.0
+    scores[0, 2, 4] = 6.0
+
+    ports = hard_topk_ports(scores, n_active=3)
+
+    assert ports.tolist() == [[0, 2, 4]]
+
+
 def test_ports_to_selection_matrix_returns_one_hot_rows():
     ports = torch.tensor([[3, 7, 11, 15], [0, 1, 2, 3]])
     selection = ports_to_selection_matrix(ports, N=16)

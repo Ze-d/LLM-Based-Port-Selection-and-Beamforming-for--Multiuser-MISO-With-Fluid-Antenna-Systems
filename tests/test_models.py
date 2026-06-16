@@ -136,9 +136,12 @@ def test_proposed_model_exposes_trainable_lora_and_layernorm(monkeypatch):
 
     trainable_names = [name for name, param in model.named_parameters() if param.requires_grad]
 
-    assert any("lora" in name for name in trainable_names)
+    assert any("lora_q" in name for name in trainable_names)
+    assert any("lora_v" in name for name in trainable_names)
+    assert not any("lora_k" in name for name in trainable_names)
     assert any("ln_" in name for name in trainable_names)
     assert any("fc1_real" in name for name in trainable_names)
+    assert not any("attn.c_attn.base_layer" in name for name in trainable_names)
     assert all(math.isfinite(param.detach().float().abs().mean().item()) for _, param in model.named_parameters())
 
 

@@ -1,4 +1,0 @@
-method,selection_mode,num_seeds,mean_test_sum_rate,std_test_sum_rate,min_test_sum_rate,max_test_sum_rate,wins_vs_random
-proposed,hard,1,14.541213134765625,0.0,14.541213134765625,14.541213134765625,1
-random,hard,1,14.533767700195312,0.0,14.533767700195312,14.533767700195312,0
-transformer,hard,1,14.387844360351563,0.0,14.387844360351563,14.387844360351563,0

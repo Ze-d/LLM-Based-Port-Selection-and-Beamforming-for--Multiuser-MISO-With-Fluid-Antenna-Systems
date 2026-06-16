@@ -56,8 +56,9 @@ class RandomBaselineModel(nn.Module):
         # MLP power allocation from H_eff features (paper: MLP maps feature → power)
         feats = torch.cat([H_eff.real.flatten(1), H_eff.imag.flatten(1)], dim=1)
         power_logits = self.mlp(feats).reshape(B, 2, self.K)
-        p = F.softmax(power_logits[:, 0, :], dim=-1) * self.Pmax_W
-        q = F.softmax(power_logits[:, 1, :], dim=-1) * self.Pmax_W
+        power_factors = torch.sigmoid(power_logits)
+        p = F.softmax(power_factors[:, 0, :], dim=-1) * self.Pmax_W
+        q = F.softmax(power_factors[:, 1, :], dim=-1) * self.Pmax_W
 
         C = beamforming_from_pq(H_eff, p, q, self.noise_power)
         rate = sum_rate(H_eff, C, self.noise_power)

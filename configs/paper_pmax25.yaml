@@ -15,7 +15,7 @@ system:
   distance_km: 0.2
 
 data:
-  train_samples: 10000
+  train_samples: 8000
   val_samples: 2000
   test_samples: 1000
 

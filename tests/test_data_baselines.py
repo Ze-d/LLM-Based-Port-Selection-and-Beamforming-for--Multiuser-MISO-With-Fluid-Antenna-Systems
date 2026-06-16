@@ -2,9 +2,18 @@ import math
 
 import torch
 
-from llm_fas.baselines import evaluate_random_baseline
+from llm_fas.baselines import RandomBaselineModel, evaluate_random_baseline
 from llm_fas.config import load_config
 from llm_fas.data import build_datasets, make_loader
+from llm_fas.physics import dbm_to_watt
+
+
+def test_paper_default_uses_paper_train_validation_split():
+    cfg = load_config("configs/paper_default.yaml")
+
+    assert cfg.data.train_samples == 8000
+    assert cfg.data.val_samples == 2000
+    assert cfg.data.test_samples == 1000
 
 
 def test_build_datasets_shapes_and_reproducibility():
@@ -39,3 +48,25 @@ def test_random_baseline_returns_finite_positive_sum_rate():
     assert isinstance(rate, float)
     assert math.isfinite(rate)
     assert rate > 0.0
+
+
+def test_random_baseline_power_head_uses_sigmoid_before_softmax():
+    cfg = load_config("configs/mvp.yaml")
+    _, _, test = build_datasets(cfg)
+    model = RandomBaselineModel(cfg)
+    with torch.no_grad():
+        for param in model.mlp.parameters():
+            param.zero_()
+        model.mlp[-1].bias.copy_(
+            torch.tensor([-1000.0, 1000.0, 0.0, -1000.0, 1000.0, 0.0], dtype=model.mlp[-1].bias.dtype)
+        )
+
+    out = model(test[:1], seed=123)
+    p = out["p"]
+    q = out["q"]
+    Pmax = dbm_to_watt(cfg.system.Pmax_dBm)
+
+    assert torch.allclose(p.sum(dim=1), torch.tensor([Pmax], dtype=p.dtype), rtol=1e-5, atol=1e-7)
+    assert torch.allclose(q.sum(dim=1), torch.tensor([Pmax], dtype=q.dtype), rtol=1e-5, atol=1e-7)
+    assert p[0, 1] / Pmax < 0.6
+    assert q[0, 1] / Pmax < 0.6
