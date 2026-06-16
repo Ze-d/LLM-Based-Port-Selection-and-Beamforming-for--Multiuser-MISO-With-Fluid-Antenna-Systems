@@ -76,6 +76,8 @@ llm_fas/models.py
 llm_fas/sinkhorn.py
 llm_fas/baselines.py
 configs/paper_default.yaml
+pyproject.toml 或 requirements.txt / requirements.lock.txt
+.python-version
 scripts/run_fig7_pmax.py
 scripts/run_fig8_active_ports.py
 scripts/run_fig9_distance.py
@@ -83,29 +85,72 @@ scripts/run_fig10_ports.py
 docs/EXPERIMENT_GUIDE.md
 ```
 
-## 3. 安装依赖
+## 3. 使用 uv 管理环境与依赖
 
-### 3.1 创建虚拟环境
+本指南改为使用 `uv` 统一管理 Python 版本、虚拟环境、依赖安装和命令执行。推荐原则：
+
+```text
+用 uv 创建/同步环境；
+用 uv pip 安装 PyTorch GPU 版本；
+用 uv run python ... 执行训练、测试和画图脚本；
+避免手动 python -m venv、直接 pip install、直接 python scripts/xxx.py。
+```
+
+### 3.1 安装 uv
+
+Linux / macOS:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv --version
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv --version
+```
+
+如果服务器不能直接安装，也可以临时使用 pipx / pip 安装 uv：
+
+```bash
+pipx install uv
+# 或者
+python -m pip install -U uv
+```
+
+### 3.2 创建 uv 虚拟环境
 
 Linux:
 
 ```bash
 cd /path/to/llm_fas_repro
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
+uv venv --python 3.10
 ```
 
 Windows PowerShell:
 
 ```powershell
 cd C:\path\to\llm_fas_repro
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
+uv venv --python 3.10
 ```
 
-### 3.2 安装 PyTorch 和项目依赖
+说明：后续命令推荐统一使用 `uv run ...`，因此一般不需要手动激活 `.venv`。如果你确实想进入虚拟环境，也可以手动激活：
+
+Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+### 3.3 安装 PyTorch GPU 版本
 
 先查看 GPU 和驱动：
 
@@ -113,19 +158,63 @@ python -m pip install -U pip
 nvidia-smi
 ```
 
-先按 GPU 机器的 CUDA/驱动安装对应的 PyTorch GPU 版本，然后安装其它依赖：
+推荐让 uv 根据当前机器自动选择 PyTorch 后端：
 
 ```bash
-pip install transformers peft numpy scipy pyyaml matplotlib tqdm pytest accelerate safetensors
+uv pip install torch --torch-backend=auto
 ```
 
-如果你已经确认当前环境有 GPU 版 PyTorch，也可以直接：
+如果你已经明确要安装某个 CUDA wheel，例如 CUDA 12.6 / 12.8，可以显式指定：
 
 ```bash
-pip install -r requirements.txt
+uv pip install torch --torch-backend=cu126
+# 或者
+uv pip install torch --torch-backend=cu128
 ```
 
-### 3.3 Hugging Face 缓存
+如果自动选择失败，再按 PyTorch 官网给出的 index-url 手动安装，例如：
+
+```bash
+uv pip install torch --index-url https://download.pytorch.org/whl/cu128
+```
+
+### 3.4 安装项目依赖
+
+如果仓库已经提供 `requirements.txt`，使用 uv 安装：
+
+```bash
+uv pip install -r requirements.txt
+```
+
+如果没有 `requirements.txt`，直接安装当前实验所需依赖：
+
+```bash
+uv pip install transformers peft numpy scipy pyyaml matplotlib tqdm pytest accelerate safetensors
+```
+
+如果希望把依赖固化下来，建议在安装成功后导出锁定版本：
+
+```bash
+uv pip freeze > requirements.lock.txt
+```
+
+### 3.5 可选：把仓库初始化为 uv 项目
+
+如果你希望后续完全按 uv 项目方式管理，可以在仓库根目录创建 `pyproject.toml`：
+
+```bash
+uv init --bare --python 3.10
+```
+
+然后把通用依赖写入项目配置：
+
+```bash
+uv add transformers peft numpy scipy pyyaml matplotlib tqdm pytest accelerate safetensors
+```
+
+注意：PyTorch 的 GPU wheel 与 CUDA 后端强相关。为了减少 GPU 服务器迁移问题，本指南仍推荐用 `uv pip install torch --torch-backend=auto` 单独安装 PyTorch。若要把 PyTorch 也写入 `pyproject.toml`，需要根据服务器 CUDA 版本配置对应的 PyTorch index。
+
+### 3.6 Hugging Face 缓存
 
 第一次运行会下载 `gpt2`。服务器网络慢时建议设置缓存目录：
 
@@ -153,20 +242,20 @@ $env:HF_ENDPOINT="https://hf-mirror.com"
 确认 CUDA 可用：
 
 ```bash
-python -c "import torch; print('CUDA:', torch.cuda.is_available()); print('Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+uv run python -c "import torch; print('CUDA:', torch.cuda.is_available()); print('Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 ```
 
 先做语法检查：
 
 ```bash
-python -m compileall llm_fas tests scripts
+uv run python -m compileall llm_fas tests scripts
 ```
 
 再跑核心测试：
 
 ```bash
-python -m pytest tests/test_sinkhorn.py tests/test_physics.py tests/test_beamforming.py -q
-python -m pytest tests/test_data_baselines.py tests/test_models.py tests/test_train.py -q
+uv run pytest tests/test_sinkhorn.py tests/test_physics.py tests/test_beamforming.py -q
+uv run pytest tests/test_data_baselines.py tests/test_models.py tests/test_train.py -q
 ```
 
 ## 5. 配置文件
@@ -201,7 +290,7 @@ carrier = 2 GHz
 目的：确认依赖、CUDA、GPT-2 下载、训练和评估流程都正常。
 
 ```bash
-python scripts/run_stage3_extended.py \
+uv run python scripts/run_stage3_extended.py \
   --config configs/paper_training_smoke.yaml \
   --seeds 20260606 \
   --methods random,proposed \
@@ -228,7 +317,7 @@ random/proposed 都有正的 test_sum_rate
 目的：确认 `random,cnn,transformer,llm_sequential,proposed` 都能训练和评估。
 
 ```bash
-python scripts/run_stage3_extended.py \
+uv run python scripts/run_stage3_extended.py \
   --config configs/mvp.yaml \
   --seeds 20260606 \
   --methods random,cnn,transformer,llm_sequential,proposed \
@@ -247,7 +336,7 @@ cat outputs/paper_aligned_mvp_5methods/summary.csv
 目的：快速判断 paper-aligned 实现下 proposed 是否开始稳定优于 random / transformer。
 
 ```bash
-python scripts/run_stage3_extended.py \
+uv run python scripts/run_stage3_extended.py \
   --config configs/paper_default.yaml \
   --seeds 20260606,20260607,20260608 \
   --methods random,transformer,proposed \
@@ -274,7 +363,7 @@ proposed.wins_vs_random >= 2
 目的：生成更接近论文主对比的结果。
 
 ```bash
-python scripts/run_stage3_extended.py \
+uv run python scripts/run_stage3_extended.py \
   --config configs/paper_default.yaml \
   --seeds 20260606,20260607,20260608,20260609,20260610 \
   --methods random,cnn,transformer,llm_sequential,proposed \
@@ -286,7 +375,7 @@ python scripts/run_stage3_extended.py \
 
 ```bash
 mkdir -p logs
-nohup python scripts/run_stage3_extended.py \
+nohup uv run python scripts/run_stage3_extended.py \
   --config configs/paper_default.yaml \
   --seeds 20260606,20260607,20260608,20260609,20260610 \
   --methods random,cnn,transformer,llm_sequential,proposed \
@@ -320,10 +409,10 @@ watch -n 5 nvidia-smi
 先 dry run：
 
 ```bash
-python scripts/run_fig7_pmax.py --dry-run --device cuda --output-root outputs/fig7_Pmax_paper_aligned
-python scripts/run_fig8_active_ports.py --dry-run --device cuda --output-root outputs/fig8_active_ports_paper_aligned
-python scripts/run_fig9_distance.py --dry-run --device cuda --output-root outputs/fig9_distance_paper_aligned
-python scripts/run_fig10_ports.py --dry-run --device cuda --output-root outputs/fig10_ports_paper_aligned
+uv run python scripts/run_fig7_pmax.py --dry-run --device cuda --output-root outputs/fig7_Pmax_paper_aligned
+uv run python scripts/run_fig8_active_ports.py --dry-run --device cuda --output-root outputs/fig8_active_ports_paper_aligned
+uv run python scripts/run_fig9_distance.py --dry-run --device cuda --output-root outputs/fig9_distance_paper_aligned
+uv run python scripts/run_fig10_ports.py --dry-run --device cuda --output-root outputs/fig10_ports_paper_aligned
 ```
 
 ### 7.1 Fig.7: Pmax
@@ -337,7 +426,7 @@ Pmax = 10, 15, 20, 25, 30 dBm
 训练：
 
 ```bash
-python scripts/run_fig7_pmax.py \
+uv run python scripts/run_fig7_pmax.py \
   --config configs/paper_default.yaml \
   --values 10,15,20,25,30 \
   --seeds 20260606,20260607,20260608 \
@@ -349,7 +438,7 @@ python scripts/run_fig7_pmax.py \
 画图：
 
 ```bash
-python scripts/plot_fig7.py \
+uv run python scripts/plot_fig7.py \
   --output-root outputs/fig7_Pmax_paper_aligned \
   --output-prefix fig7_Pmax_paper_aligned
 ```
@@ -365,7 +454,7 @@ n = 3, 4, 5, 6
 训练：
 
 ```bash
-python scripts/run_fig8_active_ports.py \
+uv run python scripts/run_fig8_active_ports.py \
   --config configs/paper_default.yaml \
   --values 3,4,5,6 \
   --seeds 20260606,20260607,20260608 \
@@ -377,7 +466,7 @@ python scripts/run_fig8_active_ports.py \
 画图：
 
 ```bash
-python scripts/plot_fig8.py \
+uv run python scripts/plot_fig8.py \
   --output-root outputs/fig8_active_ports_paper_aligned \
   --output-prefix fig8_active_ports_paper_aligned
 ```
@@ -393,7 +482,7 @@ d = 0.1, 0.15, 0.2, 0.25, 0.3 km
 训练：
 
 ```bash
-python scripts/run_fig9_distance.py \
+uv run python scripts/run_fig9_distance.py \
   --config configs/paper_default.yaml \
   --values 0.1,0.15,0.2,0.25,0.3 \
   --seeds 20260606,20260607,20260608 \
@@ -405,7 +494,7 @@ python scripts/run_fig9_distance.py \
 画图：
 
 ```bash
-python scripts/plot_fig9.py \
+uv run python scripts/plot_fig9.py \
   --output-root outputs/fig9_distance_paper_aligned \
   --output-prefix fig9_distance_paper_aligned
 ```
@@ -422,7 +511,7 @@ N = 9, 16, 25, 36
 训练：
 
 ```bash
-python scripts/run_fig10_ports.py \
+uv run python scripts/run_fig10_ports.py \
   --config configs/paper_default.yaml \
   --grids 3x3,4x4,5x5,6x6 \
   --seeds 20260606,20260607,20260608 \
@@ -434,7 +523,7 @@ python scripts/run_fig10_ports.py \
 画图：
 
 ```bash
-python scripts/plot_fig10.py \
+uv run python scripts/plot_fig10.py \
   --output-root outputs/fig10_ports_paper_aligned \
   --output-prefix fig10_ports_paper_aligned
 ```
@@ -462,7 +551,7 @@ outputs/fig7_Pmax_paper_aligned/
 Fig.5 关注不同 batch size 的训练/验证 loss 收敛。先按脚本 dry run 或直接运行：
 
 ```bash
-python scripts/run_fig5_convergence.py \
+uv run python scripts/run_fig5_convergence.py \
   --config configs/paper_default.yaml \
   --seeds 20260606 \
   --output-root outputs/fig5_paper_aligned \
@@ -472,7 +561,7 @@ python scripts/run_fig5_convergence.py \
 画图：
 
 ```bash
-python scripts/plot_fig5.py \
+uv run python scripts/plot_fig5.py \
   --output-root outputs/fig5_paper_aligned \
   --output-prefix fig5_paper_aligned \
   --seed 20260606
@@ -561,9 +650,9 @@ cat outputs/<experiment>/seed_20260606/proposed_train_history.csv
 mkdir -p logs
 {
   date
-  python --version
-  python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
-  python -c "import torch; print('cuda available', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+  uv run python --version
+  uv run python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
+  uv run python -c "import torch; print('cuda available', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
   nvidia-smi
   git status --short
 } > logs/env_snapshot_paper_aligned.txt
@@ -584,7 +673,7 @@ cp outputs/fig7_Pmax_paper_aligned/Pmax_30/summary.csv logs/fig7_Pmax30_paper_al
 
 ```bash
 nvidia-smi
-python -c "import torch; print(torch.cuda.is_available())"
+uv run python -c "import torch; print(torch.cuda.is_available())"
 ```
 
 如果 `nvidia-smi` 正常但 PyTorch 显示 `False`，通常是 PyTorch 安装成 CPU 版，需要重新安装 GPU 版 PyTorch。
@@ -640,31 +729,31 @@ export HF_ENDPOINT=https://hf-mirror.com
 
 ```bash
 # 环境检查
-python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 
 # 最小冒烟
-python scripts/run_stage3_extended.py --config configs/paper_training_smoke.yaml --seeds 20260606 --methods random,proposed --device cuda --output-root outputs/paper_aligned_smoke
+uv run python scripts/run_stage3_extended.py --config configs/paper_training_smoke.yaml --seeds 20260606 --methods random,proposed --device cuda --output-root outputs/paper_aligned_smoke
 
 # 五方法 MVP
-python scripts/run_stage3_extended.py --config configs/mvp.yaml --seeds 20260606 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/paper_aligned_mvp_5methods
+uv run python scripts/run_stage3_extended.py --config configs/mvp.yaml --seeds 20260606 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/paper_aligned_mvp_5methods
 
 # 默认参数三方法 3-seed
-python scripts/run_stage3_extended.py --config configs/paper_default.yaml --seeds 20260606,20260607,20260608 --methods random,transformer,proposed --device cuda --output-root outputs/paper_aligned_3seed_main
+uv run python scripts/run_stage3_extended.py --config configs/paper_default.yaml --seeds 20260606,20260607,20260608 --methods random,transformer,proposed --device cuda --output-root outputs/paper_aligned_3seed_main
 
 # 默认参数五方法 5-seed
-python scripts/run_stage3_extended.py --config configs/paper_default.yaml --seeds 20260606,20260607,20260608,20260609,20260610 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/paper_aligned_5seed_5methods
+uv run python scripts/run_stage3_extended.py --config configs/paper_default.yaml --seeds 20260606,20260607,20260608,20260609,20260610 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/paper_aligned_5seed_5methods
 
 # Fig.7-10 三 seed
-python scripts/run_fig7_pmax.py --config configs/paper_default.yaml --values 10,15,20,25,30 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig7_Pmax_paper_aligned
-python scripts/run_fig8_active_ports.py --config configs/paper_default.yaml --values 3,4,5,6 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig8_active_ports_paper_aligned
-python scripts/run_fig9_distance.py --config configs/paper_default.yaml --values 0.1,0.15,0.2,0.25,0.3 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig9_distance_paper_aligned
-python scripts/run_fig10_ports.py --config configs/paper_default.yaml --grids 3x3,4x4,5x5,6x6 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig10_ports_paper_aligned
+uv run python scripts/run_fig7_pmax.py --config configs/paper_default.yaml --values 10,15,20,25,30 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig7_Pmax_paper_aligned
+uv run python scripts/run_fig8_active_ports.py --config configs/paper_default.yaml --values 3,4,5,6 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig8_active_ports_paper_aligned
+uv run python scripts/run_fig9_distance.py --config configs/paper_default.yaml --values 0.1,0.15,0.2,0.25,0.3 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig9_distance_paper_aligned
+uv run python scripts/run_fig10_ports.py --config configs/paper_default.yaml --grids 3x3,4x4,5x5,6x6 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig10_ports_paper_aligned
 
 # 画图
-python scripts/plot_fig7.py --output-root outputs/fig7_Pmax_paper_aligned --output-prefix fig7_Pmax_paper_aligned
-python scripts/plot_fig8.py --output-root outputs/fig8_active_ports_paper_aligned --output-prefix fig8_active_ports_paper_aligned
-python scripts/plot_fig9.py --output-root outputs/fig9_distance_paper_aligned --output-prefix fig9_distance_paper_aligned
-python scripts/plot_fig10.py --output-root outputs/fig10_ports_paper_aligned --output-prefix fig10_ports_paper_aligned
+uv run python scripts/plot_fig7.py --output-root outputs/fig7_Pmax_paper_aligned --output-prefix fig7_Pmax_paper_aligned
+uv run python scripts/plot_fig8.py --output-root outputs/fig8_active_ports_paper_aligned --output-prefix fig8_active_ports_paper_aligned
+uv run python scripts/plot_fig9.py --output-root outputs/fig9_distance_paper_aligned --output-prefix fig9_distance_paper_aligned
+uv run python scripts/plot_fig10.py --output-root outputs/fig10_ports_paper_aligned --output-prefix fig10_ports_paper_aligned
 
 # 查看结果
 cat outputs/paper_aligned_3seed_main/summary.csv
