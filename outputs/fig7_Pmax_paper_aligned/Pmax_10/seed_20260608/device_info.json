@@ -1,0 +1,7 @@
+{
+  "requested_device": "cuda",
+  "resolved_device": "cuda",
+  "cuda_available": true,
+  "torch_cuda_version": "13.0",
+  "cuda_device_name": "NVIDIA GeForce RTX 4090"
+}

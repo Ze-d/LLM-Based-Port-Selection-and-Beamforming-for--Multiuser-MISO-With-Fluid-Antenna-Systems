@@ -1,0 +1,32 @@
+seed: 20260608
+device: cuda
+system:
+  K: 3
+  Nx: 4
+  Ny: 4
+  n_active: 4
+  W_lambda_x: 2.0
+  W_lambda_y: 2.0
+  Pmax_dBm: 30.0
+  noise_psd_dBm_per_Hz: -174.0
+  bandwidth_Hz: 10000000.0
+  carrier_Hz: 2000000000.0
+  distance_km: 0.2
+data:
+  train_samples: 8000
+  val_samples: 2000
+  test_samples: 1000
+model:
+  d_mha: 768
+  mha_heads: 8
+  backbone_name: gpt2
+  gpt2_layers: 6
+  lora_rank: 4
+  sinkhorn_iters: 10
+train:
+  epochs: 200
+  batch_size: 100
+  lr: 1.0e-06
+  tau_min: 0.1
+  tau_decay: 0.95
+  output_dir: outputs/fig7_Pmax_paper_aligned/Pmax_30/seed_20260608
