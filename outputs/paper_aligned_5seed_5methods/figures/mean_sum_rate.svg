@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="600" viewBox="0 0 980 600">
+<rect width="100%" height="100%" fill="white"/>
+<text x="490.00" y="32.00" font-size="22" text-anchor="middle" font-weight="bold" fill="#222">Paper-aligned 5-seed result: mean test sum-rate</text>
+<text x="490.00" y="55.00" font-size="13" text-anchor="middle" font-weight="normal" fill="#555">Error bars show one standard deviation across seeds</text>
+<line x1="90" y1="485.00" x2="940" y2="485.00" stroke="#e6e6e6"/>
+<text x="80.00" y="490.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.10</text>
+<line x1="90" y1="402.00" x2="940" y2="402.00" stroke="#e6e6e6"/>
+<text x="80.00" y="407.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.17</text>
+<line x1="90" y1="319.00" x2="940" y2="319.00" stroke="#e6e6e6"/>
+<text x="80.00" y="324.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.25</text>
+<line x1="90" y1="236.00" x2="940" y2="236.00" stroke="#e6e6e6"/>
+<text x="80.00" y="241.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.32</text>
+<line x1="90" y1="153.00" x2="940" y2="153.00" stroke="#e6e6e6"/>
+<text x="80.00" y="158.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.40</text>
+<line x1="90" y1="70.00" x2="940" y2="70.00" stroke="#e6e6e6"/>
+<text x="80.00" y="75.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.48</text>
+<line x1="90" y1="70" x2="90" y2="485" stroke="#222"/>
+<line x1="90" y1="485" x2="940" y2="485" stroke="#222"/>
+<text x="24.00" y="277.50" font-size="14" text-anchor="middle" font-weight="normal" fill="#333" transform="rotate(-90 24 277.5)">Sum rate (bps/Hz)</text>
+<rect x="128.25" y="316.52" width="93.50" height="168.48" fill="#7a7a7a" opacity="0.88"/>
+<line x1="175.00" y1="232.69" x2="175.00" y2="400.36" stroke="#222" stroke-width="1.8"/>
+<line x1="163.00" y1="232.69" x2="187.00" y2="232.69" stroke="#222" stroke-width="1.8"/>
+<line x1="163.00" y1="400.36" x2="187.00" y2="400.36" stroke="#222" stroke-width="1.8"/>
+<text x="175.00" y="306.52" font-size="12" text-anchor="middle" font-weight="bold" fill="#222">19.2502</text>
+<text x="175.00" y="513.00" font-size="13" text-anchor="middle" font-weight="normal" fill="#222">Random</text>
+<text x="175.00" y="533.00" font-size="11" text-anchor="middle" font-weight="normal" fill="#666">?0.0771</text>
+<rect x="298.25" y="311.38" width="93.50" height="173.62" fill="#e69f00" opacity="0.88"/>
+<line x1="345.00" y1="194.10" x2="345.00" y2="428.66" stroke="#222" stroke-width="1.8"/>
+<line x1="333.00" y1="194.10" x2="357.00" y2="194.10" stroke="#222" stroke-width="1.8"/>
+<line x1="333.00" y1="428.66" x2="357.00" y2="428.66" stroke="#222" stroke-width="1.8"/>
+<text x="345.00" y="301.38" font-size="12" text-anchor="middle" font-weight="bold" fill="#222">19.2549</text>
+<text x="345.00" y="513.00" font-size="13" text-anchor="middle" font-weight="normal" fill="#222">CNN</text>
+<text x="345.00" y="533.00" font-size="11" text-anchor="middle" font-weight="normal" fill="#666">?0.1079</text>
+<rect x="468.25" y="377.99" width="93.50" height="107.01" fill="#cc3311" opacity="0.88"/>
+<line x1="515.00" y1="314.46" x2="515.00" y2="441.52" stroke="#222" stroke-width="1.8"/>
+<line x1="503.00" y1="314.46" x2="527.00" y2="314.46" stroke="#222" stroke-width="1.8"/>
+<line x1="503.00" y1="441.52" x2="527.00" y2="441.52" stroke="#222" stroke-width="1.8"/>
+<text x="515.00" y="367.99" font-size="12" text-anchor="middle" font-weight="bold" fill="#222">19.1936</text>
+<text x="515.00" y="513.00" font-size="13" text-anchor="middle" font-weight="normal" fill="#222">Transformer</text>
+<text x="515.00" y="533.00" font-size="11" text-anchor="middle" font-weight="normal" fill="#666">?0.0584</text>
+<rect x="638.25" y="220.99" width="93.50" height="264.01" fill="#7b3294" opacity="0.88"/>
+<line x1="685.00" y1="113.48" x2="685.00" y2="328.49" stroke="#222" stroke-width="1.8"/>
+<line x1="673.00" y1="113.48" x2="697.00" y2="113.48" stroke="#222" stroke-width="1.8"/>
+<line x1="673.00" y1="328.49" x2="697.00" y2="328.49" stroke="#222" stroke-width="1.8"/>
+<text x="685.00" y="210.99" font-size="12" text-anchor="middle" font-weight="bold" fill="#222">19.3380</text>
+<text x="685.00" y="513.00" font-size="13" text-anchor="middle" font-weight="normal" fill="#222">LLM-seq</text>
+<text x="685.00" y="533.00" font-size="11" text-anchor="middle" font-weight="normal" fill="#666">?0.0989</text>
+<rect x="808.25" y="220.99" width="93.50" height="264.01" fill="#0072b2" opacity="0.88"/>
+<line x1="855.00" y1="113.49" x2="855.00" y2="328.48" stroke="#222" stroke-width="1.8"/>
+<line x1="843.00" y1="113.49" x2="867.00" y2="113.49" stroke="#222" stroke-width="1.8"/>
+<line x1="843.00" y1="328.48" x2="867.00" y2="328.48" stroke="#222" stroke-width="1.8"/>
+<text x="855.00" y="210.99" font-size="12" text-anchor="middle" font-weight="bold" fill="#222">19.3380</text>
+<text x="855.00" y="513.00" font-size="13" text-anchor="middle" font-weight="normal" fill="#222">Proposed</text>
+<text x="855.00" y="533.00" font-size="11" text-anchor="middle" font-weight="normal" fill="#666">?0.0989</text>
+</svg>

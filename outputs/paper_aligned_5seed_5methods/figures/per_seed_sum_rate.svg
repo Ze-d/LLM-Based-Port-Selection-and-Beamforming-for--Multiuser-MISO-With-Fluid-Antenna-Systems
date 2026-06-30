@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1050" height="620" viewBox="0 0 1050 620">
+<rect width="100%" height="100%" fill="white"/>
+<text x="525.00" y="32.00" font-size="22" text-anchor="middle" font-weight="bold" fill="#222">Per-seed test sum-rate comparison</text>
+<text x="525.00" y="55.00" font-size="13" text-anchor="middle" font-weight="normal" fill="#555">Each point is one independent seed under paper_default.yaml</text>
+<line x1="95" y1="525.00" x2="860" y2="525.00" stroke="#e6e6e6"/>
+<text x="85.00" y="530.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.07</text>
+<line x1="95" y1="434.00" x2="860" y2="434.00" stroke="#e6e6e6"/>
+<text x="85.00" y="439.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.16</text>
+<line x1="95" y1="343.00" x2="860" y2="343.00" stroke="#e6e6e6"/>
+<text x="85.00" y="348.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.24</text>
+<line x1="95" y1="252.00" x2="860" y2="252.00" stroke="#e6e6e6"/>
+<text x="85.00" y="257.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.33</text>
+<line x1="95" y1="161.00" x2="860" y2="161.00" stroke="#e6e6e6"/>
+<text x="85.00" y="166.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.42</text>
+<line x1="95" y1="70.00" x2="860" y2="70.00" stroke="#e6e6e6"/>
+<text x="85.00" y="75.00" font-size="12" text-anchor="end" font-weight="normal" fill="#555">19.51</text>
+<line x1="95.00" y1="70" x2="95.00" y2="525" stroke="#f2f2f2"/>
+<text x="95.00" y="552.00" font-size="12" text-anchor="middle" font-weight="normal" fill="#222">06</text>
+<line x1="286.25" y1="70" x2="286.25" y2="525" stroke="#f2f2f2"/>
+<text x="286.25" y="552.00" font-size="12" text-anchor="middle" font-weight="normal" fill="#222">07</text>
+<line x1="477.50" y1="70" x2="477.50" y2="525" stroke="#f2f2f2"/>
+<text x="477.50" y="552.00" font-size="12" text-anchor="middle" font-weight="normal" fill="#222">08</text>
+<line x1="668.75" y1="70" x2="668.75" y2="525" stroke="#f2f2f2"/>
+<text x="668.75" y="552.00" font-size="12" text-anchor="middle" font-weight="normal" fill="#222">09</text>
+<line x1="860.00" y1="70" x2="860.00" y2="525" stroke="#f2f2f2"/>
+<text x="860.00" y="552.00" font-size="12" text-anchor="middle" font-weight="normal" fill="#222">10</text>
+<text x="477.50" y="592.00" font-size="14" text-anchor="middle" font-weight="normal" fill="#222">Seed suffix (202606xx)</text>
+<text x="24.00" y="297.50" font-size="14" text-anchor="middle" font-weight="normal" fill="#333" transform="rotate(-90 24 297.5)">Sum rate (bps/Hz)</text>
+<line x1="95" y1="70" x2="95" y2="525" stroke="#222"/>
+<line x1="95" y1="525" x2="860" y2="525" stroke="#222"/>
+<path d="M95.00,420.90 L286.25,365.24 L477.50,357.24 L668.75,207.33 L860.00,333.62" fill="none" stroke="#7a7a7a" stroke-width="2.3"/>
+<circle cx="95.00" cy="420.90" r="5.2" fill="white" stroke="#7a7a7a" stroke-width="2"/>
+<circle cx="286.25" cy="365.24" r="5.2" fill="white" stroke="#7a7a7a" stroke-width="2"/>
+<circle cx="477.50" cy="357.24" r="5.2" fill="white" stroke="#7a7a7a" stroke-width="2"/>
+<circle cx="668.75" cy="207.33" r="5.2" fill="white" stroke="#7a7a7a" stroke-width="2"/>
+<circle cx="860.00" cy="333.62" r="5.2" fill="white" stroke="#7a7a7a" stroke-width="2"/>
+<path d="M95.00,404.62 L286.25,422.30 L477.50,349.76 L668.75,144.18 L860.00,339.17" fill="none" stroke="#e69f00" stroke-width="2.3"/>
+<circle cx="95.00" cy="404.62" r="5.2" fill="white" stroke="#e69f00" stroke-width="2"/>
+<circle cx="286.25" cy="422.30" r="5.2" fill="white" stroke="#e69f00" stroke-width="2"/>
+<circle cx="477.50" cy="349.76" r="5.2" fill="white" stroke="#e69f00" stroke-width="2"/>
+<circle cx="668.75" cy="144.18" r="5.2" fill="white" stroke="#e69f00" stroke-width="2"/>
+<circle cx="860.00" cy="339.17" r="5.2" fill="white" stroke="#e69f00" stroke-width="2"/>
+<path d="M95.00,351.53 L286.25,413.55 L477.50,329.76 L668.75,395.77 L860.00,483.93" fill="none" stroke="#cc3311" stroke-width="2.3"/>
+<circle cx="95.00" cy="351.53" r="5.2" fill="white" stroke="#cc3311" stroke-width="2"/>
+<circle cx="286.25" cy="413.55" r="5.2" fill="white" stroke="#cc3311" stroke-width="2"/>
+<circle cx="477.50" cy="329.76" r="5.2" fill="white" stroke="#cc3311" stroke-width="2"/>
+<circle cx="668.75" cy="395.77" r="5.2" fill="white" stroke="#cc3311" stroke-width="2"/>
+<circle cx="860.00" cy="483.93" r="5.2" fill="white" stroke="#cc3311" stroke-width="2"/>
+<path d="M95.00,387.40 L286.25,276.89 L477.50,201.61 L668.75,111.07 L860.00,256.22" fill="none" stroke="#7b3294" stroke-width="2.3"/>
+<circle cx="95.00" cy="387.40" r="5.2" fill="white" stroke="#7b3294" stroke-width="2"/>
+<circle cx="286.25" cy="276.89" r="5.2" fill="white" stroke="#7b3294" stroke-width="2"/>
+<circle cx="477.50" cy="201.61" r="5.2" fill="white" stroke="#7b3294" stroke-width="2"/>
+<circle cx="668.75" cy="111.07" r="5.2" fill="white" stroke="#7b3294" stroke-width="2"/>
+<circle cx="860.00" cy="256.22" r="5.2" fill="white" stroke="#7b3294" stroke-width="2"/>
+<path d="M95.00,387.41 L286.25,276.89 L477.50,201.61 L668.75,111.09 L860.00,256.21" fill="none" stroke="#0072b2" stroke-width="2.3"/>
+<circle cx="95.00" cy="387.41" r="5.2" fill="#0072b2" stroke="#0072b2" stroke-width="2"/>
+<circle cx="286.25" cy="276.89" r="5.2" fill="#0072b2" stroke="#0072b2" stroke-width="2"/>
+<circle cx="477.50" cy="201.61" r="5.2" fill="#0072b2" stroke="#0072b2" stroke-width="2"/>
+<circle cx="668.75" cy="111.09" r="5.2" fill="#0072b2" stroke="#0072b2" stroke-width="2"/>
+<circle cx="860.00" cy="256.21" r="5.2" fill="#0072b2" stroke="#0072b2" stroke-width="2"/>
+<line x1="890" y1="100" x2="918" y2="100" stroke="#7a7a7a" stroke-width="2.5"/>
+<circle cx="904" cy="100" r="4.6" fill="white" stroke="#7a7a7a" stroke-width="2"/>
+<text x="930.00" y="105.00" font-size="13" text-anchor="start" font-weight="normal" fill="#222">Random</text>
+<line x1="890" y1="128" x2="918" y2="128" stroke="#e69f00" stroke-width="2.5"/>
+<circle cx="904" cy="128" r="4.6" fill="white" stroke="#e69f00" stroke-width="2"/>
+<text x="930.00" y="133.00" font-size="13" text-anchor="start" font-weight="normal" fill="#222">CNN</text>
+<line x1="890" y1="156" x2="918" y2="156" stroke="#cc3311" stroke-width="2.5"/>
+<circle cx="904" cy="156" r="4.6" fill="white" stroke="#cc3311" stroke-width="2"/>
+<text x="930.00" y="161.00" font-size="13" text-anchor="start" font-weight="normal" fill="#222">Transformer</text>
+<line x1="890" y1="184" x2="918" y2="184" stroke="#7b3294" stroke-width="2.5"/>
+<circle cx="904" cy="184" r="4.6" fill="white" stroke="#7b3294" stroke-width="2"/>
+<text x="930.00" y="189.00" font-size="13" text-anchor="start" font-weight="normal" fill="#222">LLM-seq</text>
+<line x1="890" y1="212" x2="918" y2="212" stroke="#0072b2" stroke-width="2.5"/>
+<circle cx="904" cy="212" r="4.6" fill="white" stroke="#0072b2" stroke-width="2"/>
+<text x="930.00" y="217.00" font-size="13" text-anchor="start" font-weight="normal" fill="#222">Proposed</text>
+</svg>
