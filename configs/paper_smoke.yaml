@@ -3,8 +3,8 @@ device: auto
 
 system:
   K: 3
-  Nx: 4
-  Ny: 4
+  Nx: 30
+  Ny: 30
   n_active: 4
   W_lambda_x: 2.0
   W_lambda_y: 2.0
@@ -33,4 +33,4 @@ train:
   lr: 0.000001
   tau_min: 0.1
   tau_decay: 0.95
-  output_dir: outputs/paper_smoke
+  output_dir: outputs/paper_smoke_30x30

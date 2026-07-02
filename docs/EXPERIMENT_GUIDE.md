@@ -260,18 +260,18 @@ uv run pytest tests/test_data_baselines.py tests/test_models.py tests/test_train
 
 ## 5. 配置文件
 
-| 配置 | 用途 | train/val/test | epochs | batch | layers | d_mha |
-|---|---|---:|---:|---:|---:|---:|
-| `configs/paper_training_smoke.yaml` | 最小流程验证 | 64/32/32 | 2 | 8 | 6 | 768 |
-| `configs/paper_smoke.yaml` | 论文结构冒烟 | 2000/400/400 | 5 | 16 | 6 | 768 |
-| `configs/mvp.yaml` | 小规模五方法调试 | 1000/200/200 | 20 | 16 | 2 | 128 |
-| `configs/paper_default.yaml` | 论文默认配置 | 8000/2000/1000 | 200 | 100 | 6 | 768 |
+| 配置 | 用途 | train/val/test | epochs | batch | N | layers | d_mha |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `configs/paper_training_smoke.yaml` | 最小流程验证 | 64/32/32 | 2 | 8 | 900 | 6 | 768 |
+| `configs/paper_smoke.yaml` | 论文结构冒烟 | 2000/400/400 | 5 | 16 | 900 | 6 | 768 |
+| `configs/mvp.yaml` | 小规模五方法调试 | 1000/200/200 | 20 | 16 | 16 | 2 | 128 |
+| `configs/paper_default.yaml` | 论文默认配置 | 8000/2000/1000 | 200 | 100 | 900 | 6 | 768 |
 
 `paper_default.yaml` 的默认系统参数：
 
 ```text
 K = 3
-Nx = Ny = 4, N = 16
+Nx = Ny = 30, N = 900
 n_active = 4
 W = 2lambda x 2lambda
 Pmax = 20 dBm
@@ -504,8 +504,8 @@ uv run python scripts/plot_fig9.py \
 扫描：
 
 ```text
-(Nx, Ny) = (3,3), (4,4), (5,5), (6,6)
-N = 9, 16, 25, 36
+(Nx, Ny) = (10,10), (20,20), (30,30)
+N = 100, 400, 900
 ```
 
 训练：
@@ -513,7 +513,7 @@ N = 9, 16, 25, 36
 ```bash
 uv run python scripts/run_fig10_ports.py \
   --config configs/paper_default.yaml \
-  --grids 3x3,4x4,5x5,6x6 \
+  --grids 10x10,20x20,30x30 \
   --seeds 20260606,20260607,20260608 \
   --methods random,cnn,transformer,llm_sequential,proposed \
   --device cuda \
@@ -747,7 +747,7 @@ uv run python scripts/run_stage3_extended.py --config configs/paper_default.yaml
 uv run python scripts/run_fig7_pmax.py --config configs/paper_default.yaml --values 10,15,20,25,30 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig7_Pmax_paper_aligned
 uv run python scripts/run_fig8_active_ports.py --config configs/paper_default.yaml --values 3,4,5,6 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig8_active_ports_paper_aligned
 uv run python scripts/run_fig9_distance.py --config configs/paper_default.yaml --values 0.1,0.15,0.2,0.25,0.3 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig9_distance_paper_aligned
-uv run python scripts/run_fig10_ports.py --config configs/paper_default.yaml --grids 3x3,4x4,5x5,6x6 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig10_ports_paper_aligned
+uv run python scripts/run_fig10_ports.py --config configs/paper_default.yaml --grids 10x10,20x20,30x30 --seeds 20260606,20260607,20260608 --methods random,cnn,transformer,llm_sequential,proposed --device cuda --output-root outputs/fig10_ports_paper_aligned
 
 # 画图
 uv run python scripts/plot_fig7.py --output-root outputs/fig7_Pmax_paper_aligned --output-prefix fig7_Pmax_paper_aligned

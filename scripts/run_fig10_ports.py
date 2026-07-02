@@ -23,7 +23,7 @@ def _apply_grid(cfg: ExperimentConfig, grid: tuple[int, int]) -> ExperimentConfi
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Fig.10 total-port-count parameter sweep.")
     parser.add_argument("--config", default="configs/paper_default.yaml", help="Base experiment config.")
-    parser.add_argument("--grids", default="3x3,4x4,5x5,6x6", help="Comma-separated Nx x Ny grids.")
+    parser.add_argument("--grids", default="10x10,20x20,30x30", help="Comma-separated Nx x Ny grids.")
     parser.add_argument("--seeds", default="20260606", help="Comma-separated seeds.")
     parser.add_argument(
         "--methods",

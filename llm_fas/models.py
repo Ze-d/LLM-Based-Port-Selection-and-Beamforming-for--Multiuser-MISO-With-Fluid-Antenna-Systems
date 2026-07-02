@@ -123,7 +123,7 @@ class JointFASModelBase(nn.Module):
         self.K = cfg.system.K
         self.N = cfg.system.Nx * cfg.system.Ny
         self.n_active = cfg.system.n_active
-        self.sequence_length = self.N * self.n_active
+        self.sequence_length = self.n_active
         self.Pmax_W = dbm_to_watt(cfg.system.Pmax_dBm)
         self.noise_power = noise_power_watt(cfg.system.noise_psd_dBm_per_Hz, cfg.system.bandwidth_Hz)
         self.d_llm = int(d_llm)
@@ -134,7 +134,7 @@ class JointFASModelBase(nn.Module):
         self.real_mha = nn.MultiheadAttention(cfg.model.d_mha, cfg.model.mha_heads, batch_first=True)
         self.imag_mha = nn.MultiheadAttention(cfg.model.d_mha, cfg.model.mha_heads, batch_first=True)
         self.fc2 = nn.Linear(2 * self.K * cfg.model.d_mha, self.sequence_length * self.d_llm)
-        self.port_head = nn.Linear(self.sequence_length * self.d_llm, self.n_active * self.N)
+        self.port_head = nn.Linear(self.d_llm, self.N)
         self.power_head = nn.Linear(self.sequence_length * self.d_llm, 2 * self.K)
 
     @staticmethod
@@ -183,7 +183,7 @@ class JointFASModelBase(nn.Module):
         backbone_out = self._run_backbone(embeddings)
         z = backbone_out.reshape(H.shape[0], -1)
 
-        port_scores = self.port_head(z).reshape(H.shape[0], self.n_active, self.N)
+        port_scores = self.port_head(backbone_out[:, : self.n_active, :])
         power_logits = self.power_head(z).reshape(H.shape[0], 2, self.K)
         p, q = _power_from_logits(power_logits, self.Pmax_W)
         selection_soft, selection, ports = _select_ports_from_scores(
@@ -270,13 +270,13 @@ class CNNBaselineModel(nn.Module):
             nn.Conv2d(16, 32, kernel_size=3, padding=1),
             nn.ReLU(),
         )
-        self.port_head = nn.Linear(32 * self.K * self.N, self.n_active * self.N)
+        self.port_head = nn.Conv2d(32, self.n_active, kernel_size=1)
         self.power_cnn = EffectiveChannelPowerCNN(self.K, self.n_active)
 
     def _port_scores(self, H: torch.Tensor) -> torch.Tensor:
         features = torch.stack([H.real.float(), H.imag.float()], dim=1)
-        features = self.port_cnn(features).flatten(1)
-        return self.port_head(features).reshape(H.shape[0], self.n_active, self.N)
+        features = self.port_cnn(features)
+        return self.port_head(features).mean(dim=2)
 
     def forward(
         self,
@@ -336,7 +336,7 @@ class LLMSequentialBaselineModel(ProposedLLMFASModel):
         embeddings = self._preprocess(H)
         backbone_out = self._run_backbone(embeddings)
         z = backbone_out.reshape(H.shape[0], -1)
-        port_scores = self.port_head(z).reshape(H.shape[0], self.n_active, self.N)
+        port_scores = self.port_head(backbone_out[:, : self.n_active, :])
         selection_soft, selection, ports = _select_ports_from_scores(
             port_scores,
             tau=tau,

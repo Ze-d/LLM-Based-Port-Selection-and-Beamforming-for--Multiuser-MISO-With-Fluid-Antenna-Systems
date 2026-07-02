@@ -1,0 +1,7 @@
+{
+  "requested_device": "cpu",
+  "resolved_device": "cpu",
+  "cuda_available": false,
+  "torch_cuda_version": null,
+  "cuda_device_name": null
+}

@@ -11,6 +11,9 @@ from llm_fas.physics import dbm_to_watt
 def test_paper_default_uses_paper_train_validation_split():
     cfg = load_config("configs/paper_default.yaml")
 
+    assert cfg.system.Nx == 30
+    assert cfg.system.Ny == 30
+    assert cfg.system.Nx * cfg.system.Ny == 900
     assert cfg.data.train_samples == 8000
     assert cfg.data.val_samples == 2000
     assert cfg.data.test_samples == 1000

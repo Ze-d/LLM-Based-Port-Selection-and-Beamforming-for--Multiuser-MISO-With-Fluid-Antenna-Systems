@@ -16,7 +16,7 @@ from sweep_common import parse_grid_values
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot Fig.10 from total-port-count sweep outputs.")
     parser.add_argument("--output-root", default="outputs/fig10_ports", help="Sweep output root.")
-    parser.add_argument("--grids", default="3x3,4x4,5x5,6x6", help="Comma-separated Nx x Ny grids.")
+    parser.add_argument("--grids", default="10x10,20x20,30x30", help="Comma-separated Nx x Ny grids.")
     parser.add_argument("--output-prefix", default="fig10_ports", help="Output figure filename prefix.")
     args = parser.parse_args()
 

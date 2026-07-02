@@ -25,6 +25,11 @@ def _tiny_cfg():
     )
 
 
+def _tiny_30x30_cfg():
+    cfg = _tiny_cfg()
+    return replace(cfg, system=replace(cfg.system, Nx=30, Ny=30))
+
+
 def _tiny_gpt2(_name: str) -> GPT2Model:
     config = GPT2Config(
         n_layer=2,
@@ -79,6 +84,19 @@ def test_proposed_model_forward_returns_expected_tensors(monkeypatch):
     out = model(H, tau=1.0, training=True)
 
     _assert_joint_model_contract(out, batch_size=2, cfg=cfg)
+
+
+def test_proposed_model_forward_scales_to_30x30_ports(monkeypatch):
+    monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
+    cfg = _tiny_30x30_cfg()
+    N = cfg.system.Nx * cfg.system.Ny
+    H = (torch.randn(1, cfg.system.K, N) + 1j * torch.randn(1, cfg.system.K, N)).to(torch.complex64) * 1e-6
+
+    model = ProposedLLMFASModel(cfg)
+    out = model(H, tau=0.5, training=False, selection_mode="hard")
+
+    _assert_joint_model_contract(out, batch_size=1, cfg=cfg)
+    assert out["ports"].shape == (1, cfg.system.n_active)
 
 
 def test_proposed_model_hard_inference_returns_unique_ports(monkeypatch):

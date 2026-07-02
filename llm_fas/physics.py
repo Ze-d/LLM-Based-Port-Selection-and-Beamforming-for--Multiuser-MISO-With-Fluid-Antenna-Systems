@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 import torch
 
@@ -29,15 +30,23 @@ def spherical_j0(x: torch.Tensor) -> torch.Tensor:
 
 def spatial_correlation_matrix(Nx: int, Ny: int, W_lambda_x: float, W_lambda_y: float) -> torch.Tensor:
     coords = port_coordinates(Nx, Ny)
-    N = Nx * Ny
-    J = torch.empty(N, N, dtype=torch.float32)
-    for i, (nx_i, ny_i) in enumerate(coords):
-        for j, (nx_j, ny_j) in enumerate(coords):
-            dx = abs(nx_i - nx_j) / max(Nx - 1, 1) * W_lambda_x
-            dy = abs(ny_i - ny_j) / max(Ny - 1, 1) * W_lambda_y
-            distance = math.sqrt(dx * dx + dy * dy)
-            J[i, j] = spherical_j0(torch.tensor(2.0 * math.pi * distance))
-    return J
+    coord_tensor = torch.tensor(coords, dtype=torch.float32)
+    x = coord_tensor[:, 0]
+    y = coord_tensor[:, 1]
+    dx = (x[:, None] - x[None, :]).abs() / max(Nx - 1, 1) * W_lambda_x
+    dy = (y[:, None] - y[None, :]).abs() / max(Ny - 1, 1) * W_lambda_y
+    distance = torch.sqrt(dx * dx + dy * dy)
+    return spherical_j0(2.0 * math.pi * distance)
+
+
+@lru_cache(maxsize=32)
+def _correlation_factor(Nx: int, Ny: int, W_lambda_x: float, W_lambda_y: float) -> torch.Tensor:
+    J = spatial_correlation_matrix(Nx, Ny, W_lambda_x, W_lambda_y)
+    eigvals, eigvecs = torch.linalg.eigh(J)
+    sort_idx = torch.argsort(eigvals, descending=True)
+    eigvals = eigvals[sort_idx].clamp_min(0.0)
+    eigvecs = eigvecs[:, sort_idx]
+    return torch.sqrt(eigvals).to(torch.complex64).unsqueeze(1) * eigvecs.T.to(torch.complex64)
 
 
 def generate_channels(
@@ -50,12 +59,6 @@ def generate_channels(
     distance_km: float,
     seed: int | None = None,
 ) -> torch.Tensor:
-    J = spatial_correlation_matrix(Nx, Ny, W_lambda_x, W_lambda_y)
-    eigvals, eigvecs = torch.linalg.eigh(J)
-    sort_idx = torch.argsort(eigvals, descending=True)
-    eigvals = eigvals[sort_idx].clamp_min(0.0)
-    eigvecs = eigvecs[:, sort_idx]
-
     generator = None
     if seed is not None:
         generator = torch.Generator(device="cpu").manual_seed(seed)
@@ -66,7 +69,5 @@ def generate_channels(
     g_imag = torch.randn(num_samples, K, N, generator=generator, dtype=torch.float32)
     g = (g_real + 1j * g_imag) * scale
 
-    lambda_sqrt = torch.diag(torch.sqrt(eigvals)).to(torch.complex64)
-    F_h = eigvecs.T.to(torch.complex64)
-    correlated = g.to(torch.complex64) @ (lambda_sqrt @ F_h)
+    correlated = g.to(torch.complex64) @ _correlation_factor(Nx, Ny, W_lambda_x, W_lambda_y)
     return math.sqrt(path_loss_beta(distance_km)) * correlated
