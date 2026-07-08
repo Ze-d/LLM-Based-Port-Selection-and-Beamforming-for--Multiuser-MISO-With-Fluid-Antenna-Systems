@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import random
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import numpy as np
@@ -133,7 +133,234 @@ def _evaluate_model_rate(
     return total_rate / total_samples
 
 
+def _evaluate_forward_rate(
+    loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    tau: float,
+    forward_fn: Callable[[torch.Tensor, float], dict[str, torch.Tensor | str]],
+) -> float:
+    total_rate = 0.0
+    total_samples = 0
+    with torch.no_grad():
+        for (batch,) in loader:
+            batch = batch.to(device)
+            out = forward_fn(batch, tau)
+            total_rate += out["rate"].sum().item()
+            total_samples += batch.shape[0]
+    return total_rate / total_samples
+
+
+def _train_stage(
+    cfg: ExperimentConfig,
+    model: torch.nn.Module,
+    train_loader: torch.utils.data.DataLoader,
+    val_loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    optimizer: torch.optim.Optimizer,
+    checkpoint_path: Path,
+    train_forward: Callable[[torch.Tensor, float], dict[str, torch.Tensor | str]],
+    val_forward: Callable[[torch.Tensor, float], dict[str, torch.Tensor | str]],
+    stage_name: str,
+) -> list[dict[str, float | int]]:
+    history: list[dict[str, float | int]] = []
+    best_val_rate = -float("inf")
+    patience = 10
+    no_improve = 0
+
+    for epoch in range(cfg.train.epochs):
+        model.train()
+        tau = _tau_for_epoch(cfg, epoch)
+        total_loss = 0.0
+        total_samples = 0
+        for (batch,) in train_loader:
+            batch = batch.to(device)
+            out = train_forward(batch, tau)
+            loss = -out["rate"].mean()
+            if not torch.isfinite(loss):
+                raise RuntimeError(f"Non-finite {stage_name} loss at epoch {epoch + 1}: {loss.item()}")
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item() * batch.shape[0]
+            total_samples += batch.shape[0]
+
+        train_loss = total_loss / total_samples
+        model.eval()
+        val_rate = _evaluate_forward_rate(val_loader, device, tau, val_forward)
+        val_loss = -val_rate
+        if not np.isfinite(train_loss) or not np.isfinite(val_loss):
+            raise RuntimeError(
+                f"Non-finite {stage_name} loss at epoch {epoch + 1}: train={train_loss}, val={val_loss}"
+            )
+        history.append({"epoch": epoch + 1, "train_loss": train_loss, "val_loss": val_loss})
+        if val_rate > best_val_rate:
+            best_val_rate = val_rate
+            no_improve = 0
+            torch.save(model.state_dict(), checkpoint_path)
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(
+                    f"[llm_fas] Early stopping {stage_name} at epoch {epoch + 1} "
+                    f"(no improvement for {patience} epochs)"
+                )
+                break
+    return history
+
+
+def _trainable_parameters(model: torch.nn.Module) -> list[torch.nn.Parameter]:
+    params = [param for param in model.parameters() if param.requires_grad]
+    if not params:
+        raise RuntimeError(f"{model.__class__.__name__} has no trainable parameters")
+    return params
+
+
+def _offset_history(
+    first: list[dict[str, float | int]],
+    second: list[dict[str, float | int]],
+) -> list[dict[str, float | int]]:
+    offset = len(first)
+    return first + [
+        {
+            "epoch": int(row["epoch"]) + offset,
+            "train_loss": row["train_loss"],
+            "val_loss": row["val_loss"],
+        }
+        for row in second
+    ]
+
+
+def train_llm_sequential_baseline(cfg: ExperimentConfig) -> Path:
+    """Train LLM-sequential as a strict two-stage baseline.
+
+    Stage 1 optimizes only the LLM port selector with uniform power. Stage 2
+    freezes that selector and trains the CNN power allocator on the selected
+    effective channel, preventing the baseline from becoming a joint optimizer.
+    """
+    _set_seeds(cfg.seed)
+    device = _select_device(cfg.device)
+    output_dir = Path(cfg.train.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _log_device("train", cfg.device, device, method="llm_sequential")
+    _write_device_info(output_dir / "device_info.json", cfg.device, device)
+
+    train_H, val_H, _ = build_datasets(cfg)
+    train_loader = make_loader(train_H, cfg.train.batch_size, shuffle=True, seed=cfg.seed)
+    val_loader = make_loader(val_H, cfg.train.batch_size, shuffle=False, seed=cfg.seed + 1)
+
+    model = LLMSequentialBaselineModel(cfg).to(device)
+
+    port_checkpoint_path = output_dir / "llm_sequential_port_selector.pt"
+    model.configure_port_selection_stage()
+    port_optimizer = torch.optim.Adam(_trainable_parameters(model), lr=cfg.train.lr)
+    port_history = _train_stage(
+        cfg,
+        model,
+        train_loader,
+        val_loader,
+        device,
+        port_optimizer,
+        port_checkpoint_path,
+        train_forward=lambda batch, tau: model.forward_port_selection_stage(batch, tau=tau, training=True),
+        val_forward=lambda batch, tau: model.forward_port_selection_stage(
+            batch, tau=tau, training=False, selection_mode="soft"
+        ),
+        stage_name="llm_sequential_port_selection",
+    )
+
+    model.load_state_dict(torch.load(port_checkpoint_path, map_location=device))
+    checkpoint_path = output_dir / "llm_sequential.pt"
+    model.configure_power_allocation_stage()
+    power_optimizer = torch.optim.Adam(_trainable_parameters(model), lr=cfg.train.lr)
+    power_history = _train_stage(
+        cfg,
+        model,
+        train_loader,
+        val_loader,
+        device,
+        power_optimizer,
+        checkpoint_path,
+        train_forward=lambda batch, tau: model.forward_power_allocation_stage(
+            batch, tau=tau, selection_mode="hard"
+        ),
+        val_forward=lambda batch, tau: model.forward_power_allocation_stage(
+            batch, tau=tau, selection_mode="hard"
+        ),
+        stage_name="llm_sequential_power_allocation",
+    )
+
+    _write_history(output_dir / "llm_sequential_port_train_history.csv", port_history)
+    _write_history(output_dir / "llm_sequential_power_train_history.csv", power_history)
+    _write_history(output_dir / "llm_sequential_train_history.csv", _offset_history(port_history, power_history))
+    return checkpoint_path
+
+
+def train_cnn_baseline(cfg: ExperimentConfig) -> Path:
+    """Train CNN as a strict two-stage sequential baseline."""
+    _set_seeds(cfg.seed)
+    device = _select_device(cfg.device)
+    output_dir = Path(cfg.train.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _log_device("train", cfg.device, device, method="cnn")
+    _write_device_info(output_dir / "device_info.json", cfg.device, device)
+
+    train_H, val_H, _ = build_datasets(cfg)
+    train_loader = make_loader(train_H, cfg.train.batch_size, shuffle=True, seed=cfg.seed)
+    val_loader = make_loader(val_H, cfg.train.batch_size, shuffle=False, seed=cfg.seed + 1)
+
+    model = CNNBaselineModel(cfg).to(device)
+
+    port_checkpoint_path = output_dir / "cnn_port_selector.pt"
+    model.configure_port_selection_stage()
+    port_optimizer = torch.optim.Adam(_trainable_parameters(model), lr=cfg.train.lr)
+    port_history = _train_stage(
+        cfg,
+        model,
+        train_loader,
+        val_loader,
+        device,
+        port_optimizer,
+        port_checkpoint_path,
+        train_forward=lambda batch, tau: model.forward_port_selection_stage(batch, tau=tau, training=True),
+        val_forward=lambda batch, tau: model.forward_port_selection_stage(
+            batch, tau=tau, training=False, selection_mode="soft"
+        ),
+        stage_name="cnn_port_selection",
+    )
+
+    model.load_state_dict(torch.load(port_checkpoint_path, map_location=device))
+    checkpoint_path = output_dir / "cnn.pt"
+    model.configure_power_allocation_stage()
+    power_optimizer = torch.optim.Adam(_trainable_parameters(model), lr=cfg.train.lr)
+    power_history = _train_stage(
+        cfg,
+        model,
+        train_loader,
+        val_loader,
+        device,
+        power_optimizer,
+        checkpoint_path,
+        train_forward=lambda batch, tau: model.forward_power_allocation_stage(
+            batch, tau=tau, selection_mode="hard"
+        ),
+        val_forward=lambda batch, tau: model.forward_power_allocation_stage(
+            batch, tau=tau, selection_mode="hard"
+        ),
+        stage_name="cnn_power_allocation",
+    )
+
+    _write_history(output_dir / "cnn_port_train_history.csv", port_history)
+    _write_history(output_dir / "cnn_power_train_history.csv", power_history)
+    _write_history(output_dir / "cnn_train_history.csv", _offset_history(port_history, power_history))
+    return checkpoint_path
+
+
 def train_method(cfg: ExperimentConfig, method: str = "proposed") -> Path:
+    if method == "cnn":
+        return train_cnn_baseline(cfg)
+    if method == "llm_sequential":
+        return train_llm_sequential_baseline(cfg)
+
     _set_seeds(cfg.seed)
     device = _select_device(cfg.device)
     output_dir = Path(cfg.train.output_dir)

@@ -76,6 +76,17 @@ def _power_from_logits(power_logits: torch.Tensor, Pmax_W: float) -> tuple[torch
     return p, q
 
 
+def _uniform_power(
+    batch_size: int,
+    K: int,
+    Pmax_W: float,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    power = torch.full((batch_size, K), Pmax_W / K, dtype=dtype, device=device)
+    return power, power.clone()
+
+
 def _select_ports_from_scores(
     port_scores: torch.Tensor,
     tau: float,
@@ -278,13 +289,30 @@ class CNNBaselineModel(nn.Module):
         features = self.port_cnn(features)
         return self.port_head(features).mean(dim=2)
 
-    def forward(
+    def set_port_selector_trainable(self, trainable: bool) -> None:
+        for module in (self.port_cnn, self.port_head):
+            for param in module.parameters():
+                param.requires_grad = trainable
+
+    def set_power_allocator_trainable(self, trainable: bool) -> None:
+        for param in self.power_cnn.parameters():
+            param.requires_grad = trainable
+
+    def configure_port_selection_stage(self) -> None:
+        self.set_port_selector_trainable(True)
+        self.set_power_allocator_trainable(False)
+
+    def configure_power_allocation_stage(self) -> None:
+        self.set_port_selector_trainable(False)
+        self.set_power_allocator_trainable(True)
+
+    def _cnn_port_selection(
         self,
         H: torch.Tensor,
         tau: float,
         training: bool,
-        selection_mode: Literal["soft", "hard"] | None = None,
-    ) -> dict[str, torch.Tensor | str]:
+        selection_mode: Literal["soft", "hard"] | None,
+    ) -> tuple[Literal["soft", "hard"], torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
         active_selection_mode = _resolve_selection_mode(training, selection_mode)
         port_scores = self._port_scores(H)
         selection_soft, selection, ports = _select_ports_from_scores(
@@ -293,6 +321,87 @@ class CNNBaselineModel(nn.Module):
             sinkhorn_iters=self.cfg.model.sinkhorn_iters,
             add_noise=training,
             selection_mode=active_selection_mode,
+        )
+        return active_selection_mode, port_scores, selection_soft, selection, ports
+
+    def forward_port_selection_stage(
+        self,
+        H: torch.Tensor,
+        tau: float,
+        training: bool,
+        selection_mode: Literal["soft", "hard"] | None = None,
+    ) -> dict[str, torch.Tensor | str]:
+        active_selection_mode, port_scores, selection_soft, selection, ports = self._cnn_port_selection(
+            H, tau=tau, training=training, selection_mode=selection_mode
+        )
+        H_eff = H @ selection.transpose(-1, -2).to(H.dtype)
+        p, q = _uniform_power(H.shape[0], self.K, self.Pmax_W, H.device, H.real.dtype)
+        C = beamforming_from_pq(H_eff, p, q, self.noise_power)
+        rate = sum_rate(H_eff, C, self.noise_power)
+        out: dict[str, torch.Tensor | str] = {
+            "port_scores": port_scores,
+            "selection_soft": selection_soft,
+            "selection": selection,
+            "selection_mode": active_selection_mode,
+            "p": p,
+            "q": q,
+            "H_eff": H_eff,
+            "C": C,
+            "rate": rate,
+        }
+        if active_selection_mode == "hard":
+            out["ports"] = ports
+            out["selection_hard"] = selection
+        return out
+
+    def forward_power_allocation_stage(
+        self,
+        H: torch.Tensor,
+        tau: float,
+        selection_mode: Literal["soft", "hard"] = "hard",
+    ) -> dict[str, torch.Tensor | str]:
+        was_training = self.training
+        self.eval()
+        with torch.no_grad():
+            active_selection_mode, port_scores, selection_soft, selection, ports = self._cnn_port_selection(
+                H, tau=tau, training=False, selection_mode=selection_mode
+            )
+            H_eff = H @ selection.transpose(-1, -2).to(H.dtype)
+            H_eff = H_eff.detach()
+            selection_soft = selection_soft.detach()
+            selection = selection.detach()
+            port_scores = port_scores.detach()
+        self.train(was_training)
+
+        power_logits = self.power_cnn(H_eff).reshape(H.shape[0], 2, self.K)
+        p, q = _power_from_logits(power_logits, self.Pmax_W)
+        C = beamforming_from_pq(H_eff, p, q, self.noise_power)
+        rate = sum_rate(H_eff, C, self.noise_power)
+        out: dict[str, torch.Tensor | str] = {
+            "port_scores": port_scores,
+            "selection_soft": selection_soft,
+            "selection": selection,
+            "selection_mode": active_selection_mode,
+            "p": p,
+            "q": q,
+            "H_eff": H_eff,
+            "C": C,
+            "rate": rate,
+        }
+        if active_selection_mode == "hard":
+            out["ports"] = ports
+            out["selection_hard"] = selection
+        return out
+
+    def forward(
+        self,
+        H: torch.Tensor,
+        tau: float,
+        training: bool,
+        selection_mode: Literal["soft", "hard"] | None = None,
+    ) -> dict[str, torch.Tensor | str]:
+        active_selection_mode, port_scores, selection_soft, selection, ports = self._cnn_port_selection(
+            H, tau=tau, training=training, selection_mode=selection_mode
         )
         H_eff = H @ selection.transpose(-1, -2).to(H.dtype)
         power_logits = self.power_cnn(H_eff).reshape(H.shape[0], 2, self.K)
@@ -325,17 +434,39 @@ class LLMSequentialBaselineModel(ProposedLLMFASModel):
             param.requires_grad = False
         self.sequential_power_cnn = EffectiveChannelPowerCNN(self.K, self.n_active)
 
-    def forward(
+    def set_port_selector_trainable(self, trainable: bool) -> None:
+        for module in (self.fc1_real, self.fc1_imag, self.real_mha, self.imag_mha, self.fc2, self.port_head):
+            for param in module.parameters():
+                param.requires_grad = trainable
+        for name, param in self.backbone.named_parameters():
+            param.requires_grad = trainable and ("lora_" in name or "ln_" in name)
+        for param in self.power_head.parameters():
+            param.requires_grad = False
+
+    def set_power_allocator_trainable(self, trainable: bool) -> None:
+        for param in self.sequential_power_cnn.parameters():
+            param.requires_grad = trainable
+        for param in self.power_head.parameters():
+            param.requires_grad = False
+
+    def configure_port_selection_stage(self) -> None:
+        self.set_port_selector_trainable(True)
+        self.set_power_allocator_trainable(False)
+
+    def configure_power_allocation_stage(self) -> None:
+        self.set_port_selector_trainable(False)
+        self.set_power_allocator_trainable(True)
+
+    def _llm_port_selection(
         self,
         H: torch.Tensor,
         tau: float,
         training: bool,
-        selection_mode: Literal["soft", "hard"] | None = None,
-    ) -> dict[str, torch.Tensor | str]:
+        selection_mode: Literal["soft", "hard"] | None,
+    ) -> tuple[Literal["soft", "hard"], torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
         active_selection_mode = _resolve_selection_mode(training, selection_mode)
         embeddings = self._preprocess(H)
         backbone_out = self._run_backbone(embeddings)
-        z = backbone_out.reshape(H.shape[0], -1)
         port_scores = self.port_head(backbone_out[:, : self.n_active, :])
         selection_soft, selection, ports = _select_ports_from_scores(
             port_scores,
@@ -343,6 +474,87 @@ class LLMSequentialBaselineModel(ProposedLLMFASModel):
             sinkhorn_iters=self.cfg.model.sinkhorn_iters,
             add_noise=training,
             selection_mode=active_selection_mode,
+        )
+        return active_selection_mode, port_scores, selection_soft, selection, ports
+
+    def forward_port_selection_stage(
+        self,
+        H: torch.Tensor,
+        tau: float,
+        training: bool,
+        selection_mode: Literal["soft", "hard"] | None = None,
+    ) -> dict[str, torch.Tensor | str]:
+        active_selection_mode, port_scores, selection_soft, selection, ports = self._llm_port_selection(
+            H, tau=tau, training=training, selection_mode=selection_mode
+        )
+        H_eff = H @ selection.transpose(-1, -2).to(H.dtype)
+        p, q = _uniform_power(H.shape[0], self.K, self.Pmax_W, H.device, H.real.dtype)
+        C = beamforming_from_pq(H_eff, p, q, self.noise_power)
+        rate = sum_rate(H_eff, C, self.noise_power)
+        out: dict[str, torch.Tensor | str] = {
+            "port_scores": port_scores,
+            "selection_soft": selection_soft,
+            "selection": selection,
+            "selection_mode": active_selection_mode,
+            "p": p,
+            "q": q,
+            "H_eff": H_eff,
+            "C": C,
+            "rate": rate,
+        }
+        if active_selection_mode == "hard":
+            out["ports"] = ports
+            out["selection_hard"] = selection
+        return out
+
+    def forward_power_allocation_stage(
+        self,
+        H: torch.Tensor,
+        tau: float,
+        selection_mode: Literal["soft", "hard"] = "hard",
+    ) -> dict[str, torch.Tensor | str]:
+        was_training = self.training
+        self.eval()
+        with torch.no_grad():
+            active_selection_mode, port_scores, selection_soft, selection, ports = self._llm_port_selection(
+                H, tau=tau, training=False, selection_mode=selection_mode
+            )
+            H_eff = H @ selection.transpose(-1, -2).to(H.dtype)
+            H_eff = H_eff.detach()
+            selection_soft = selection_soft.detach()
+            selection = selection.detach()
+            port_scores = port_scores.detach()
+        self.train(was_training)
+
+        power_logits = self.sequential_power_cnn(H_eff).reshape(H.shape[0], 2, self.K)
+        p, q = _power_from_logits(power_logits, self.Pmax_W)
+        C = beamforming_from_pq(H_eff, p, q, self.noise_power)
+        rate = sum_rate(H_eff, C, self.noise_power)
+        out: dict[str, torch.Tensor | str] = {
+            "port_scores": port_scores,
+            "selection_soft": selection_soft,
+            "selection": selection,
+            "selection_mode": active_selection_mode,
+            "p": p,
+            "q": q,
+            "H_eff": H_eff,
+            "C": C,
+            "rate": rate,
+        }
+        if active_selection_mode == "hard":
+            out["ports"] = ports
+            out["selection_hard"] = selection
+        return out
+
+    def forward(
+        self,
+        H: torch.Tensor,
+        tau: float,
+        training: bool,
+        selection_mode: Literal["soft", "hard"] | None = None,
+    ) -> dict[str, torch.Tensor | str]:
+        active_selection_mode, port_scores, selection_soft, selection, ports = self._llm_port_selection(
+            H, tau=tau, training=training, selection_mode=selection_mode
         )
         H_eff = H @ selection.transpose(-1, -2).to(H.dtype)
         power_logits = self.sequential_power_cnn(H_eff).reshape(H.shape[0], 2, self.K)

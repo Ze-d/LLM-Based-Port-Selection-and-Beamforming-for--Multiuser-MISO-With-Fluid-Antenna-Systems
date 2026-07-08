@@ -318,6 +318,24 @@ LLMSequentialBaselineModel freezes inherited power_head
 adds EffectiveChannelPowerCNN(H_eff) -> p/q
 ```
 
+修复后训练流程进一步区分：
+
+```text
+Stage 1: train LLM port selector with uniform p/q
+Stage 2: load best selector, freeze LLM port-selection path, train CNN power allocator
+```
+
+这样 `LLM-sequential` 不再通过同一个端到端 sum-rate loss 同时更新端口选择和功率分配，避免退化为 `proposed` 的 joint optimization ablation。
+
+同类修复也适用于 CNN baseline：
+
+```text
+Stage 1: train CNN port selector with uniform p/q
+Stage 2: load best selector, freeze CNN port-selection path, train CNN power allocator
+```
+
+此外，Random baseline 的训练采样修复为 `seed=None` 时使用全局 RNG 继续采样，避免每个 batch 复用新建 `torch.Generator()` 的默认固定序列。
+
 但二者共享：
 
 ```text

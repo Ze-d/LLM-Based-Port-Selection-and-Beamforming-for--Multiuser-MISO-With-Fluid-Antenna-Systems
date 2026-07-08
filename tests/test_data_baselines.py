@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from llm_fas.baselines import RandomBaselineModel, evaluate_random_baseline
+from llm_fas.baselines import RandomBaselineModel, _random_port_selection, evaluate_random_baseline
 from llm_fas.config import load_config
 from llm_fas.data import build_datasets, make_loader
 from llm_fas.physics import dbm_to_watt
@@ -51,6 +51,21 @@ def test_random_baseline_returns_finite_positive_sum_rate():
     assert isinstance(rate, float)
     assert math.isfinite(rate)
     assert rate > 0.0
+
+
+def test_random_port_selection_unseeded_advances_global_rng():
+    torch.manual_seed(123)
+    first = _random_port_selection(4, 16, 4, torch.device("cpu"), seed=None)
+    second = _random_port_selection(4, 16, 4, torch.device("cpu"), seed=None)
+
+    assert not torch.equal(first, second)
+
+
+def test_random_port_selection_seeded_is_reproducible():
+    first = _random_port_selection(4, 16, 4, torch.device("cpu"), seed=123)
+    second = _random_port_selection(4, 16, 4, torch.device("cpu"), seed=123)
+
+    assert torch.equal(first, second)
 
 
 def test_random_baseline_power_head_uses_sigmoid_before_softmax():

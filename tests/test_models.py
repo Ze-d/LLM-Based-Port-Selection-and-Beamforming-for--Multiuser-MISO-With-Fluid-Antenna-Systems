@@ -231,6 +231,50 @@ def test_cnn_baseline_forward_returns_expected_tensors():
     assert out["selection_mode"] == "soft"
 
 
+def test_cnn_baseline_port_stage_trains_selector_only():
+    cfg = _tiny_cfg()
+    H = generate_channels(
+        num_samples=2,
+        K=cfg.system.K,
+        Nx=cfg.system.Nx,
+        Ny=cfg.system.Ny,
+        W_lambda_x=cfg.system.W_lambda_x,
+        W_lambda_y=cfg.system.W_lambda_y,
+        distance_km=cfg.system.distance_km,
+        seed=108,
+    )
+
+    model = CNNBaselineModel(cfg)
+    model.configure_port_selection_stage()
+    out = model.forward_port_selection_stage(H, tau=1.0, training=True)
+    (-out["rate"].mean()).backward()
+
+    assert any(param.grad is not None for param in model.port_head.parameters())
+    assert not any(param.requires_grad for param in model.power_cnn.parameters())
+    assert not any(param.grad is not None for param in model.power_cnn.parameters())
+
+
+def test_cnn_baseline_power_stage_detaches_selector():
+    cfg = _tiny_cfg()
+    H = generate_channels(
+        num_samples=2,
+        K=cfg.system.K,
+        Nx=cfg.system.Nx,
+        Ny=cfg.system.Ny,
+        W_lambda_x=cfg.system.W_lambda_x,
+        W_lambda_y=cfg.system.W_lambda_y,
+        distance_km=cfg.system.distance_km,
+        seed=109,
+    )
+
+    model = CNNBaselineModel(cfg)
+    out = model.forward_power_allocation_stage(H, tau=0.1, selection_mode="hard")
+    (-out["rate"].mean()).backward()
+
+    assert not any(param.grad is not None for param in model.port_head.parameters())
+    assert any(param.grad is not None for param in model.power_cnn.parameters())
+
+
 def test_llm_sequential_baseline_forward_returns_expected_tensors(monkeypatch):
     monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
     cfg = _tiny_cfg()
@@ -251,3 +295,49 @@ def test_llm_sequential_baseline_forward_returns_expected_tensors(monkeypatch):
     _assert_joint_model_contract(out, batch_size=2, cfg=cfg)
     assert out["selection_mode"] == "soft"
     assert not any(param.requires_grad for param in model.power_head.parameters())
+
+
+def test_llm_sequential_port_stage_trains_selector_only(monkeypatch):
+    monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
+    cfg = _tiny_cfg()
+    H = generate_channels(
+        num_samples=2,
+        K=cfg.system.K,
+        Nx=cfg.system.Nx,
+        Ny=cfg.system.Ny,
+        W_lambda_x=cfg.system.W_lambda_x,
+        W_lambda_y=cfg.system.W_lambda_y,
+        distance_km=cfg.system.distance_km,
+        seed=106,
+    )
+
+    model = LLMSequentialBaselineModel(cfg)
+    model.configure_port_selection_stage()
+    out = model.forward_port_selection_stage(H, tau=1.0, training=True)
+    (-out["rate"].mean()).backward()
+
+    assert any(param.grad is not None for param in model.port_head.parameters())
+    assert not any(param.requires_grad for param in model.sequential_power_cnn.parameters())
+    assert not any(param.grad is not None for param in model.sequential_power_cnn.parameters())
+
+
+def test_llm_sequential_power_stage_detaches_selector(monkeypatch):
+    monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
+    cfg = _tiny_cfg()
+    H = generate_channels(
+        num_samples=2,
+        K=cfg.system.K,
+        Nx=cfg.system.Nx,
+        Ny=cfg.system.Ny,
+        W_lambda_x=cfg.system.W_lambda_x,
+        W_lambda_y=cfg.system.W_lambda_y,
+        distance_km=cfg.system.distance_km,
+        seed=107,
+    )
+
+    model = LLMSequentialBaselineModel(cfg)
+    out = model.forward_power_allocation_stage(H, tau=0.1, selection_mode="hard")
+    (-out["rate"].mean()).backward()
+
+    assert not any(param.grad is not None for param in model.port_head.parameters())
+    assert any(param.grad is not None for param in model.sequential_power_cnn.parameters())

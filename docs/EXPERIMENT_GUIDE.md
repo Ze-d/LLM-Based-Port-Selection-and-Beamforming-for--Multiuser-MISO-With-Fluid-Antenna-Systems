@@ -39,6 +39,8 @@ proposed         GPT-2 + LoRA parallel port/power output
 
 命令行中 `llm-sequential` 会自动映射为 `llm_sequential`。
 
+`cnn` 和 `llm_sequential` 按 two-stage baseline 训练：第一阶段只训练端口选择器，并用 uniform power 评价端口选择；第二阶段加载第一阶段最佳 selector，冻结端口选择路径，只训练 sequential power allocator。这样避免 sequential baseline 通过同一个 sum-rate loss 退化成 joint optimizer。`random` 训练阶段使用随机端口，每个 batch 会从全局 RNG 继续采样；评估阶段仍使用固定 seed 保证可复现。
+
 说明：论文没有公开 CNN、Transformer、LLM-sequential baseline 的完整层数和所有工程细节。当前实现对论文明确写出的部分做了对齐，未公开部分保持合理补全。
 
 ## 2. 环境准备
@@ -586,11 +588,17 @@ outputs/<experiment>/seed_<seed>/
 ├── random.pt
 ├── random_train_history.csv
 ├── cnn.pt
+├── cnn_port_selector.pt
+├── cnn_port_train_history.csv
+├── cnn_power_train_history.csv
 ├── cnn_train_history.csv
 ├── transformer.pt
 ├── transformer_train_history.csv
 ├── llm_sequential.pt
 ├── llm_sequential_train_history.csv
+├── llm_sequential_port_selector.pt
+├── llm_sequential_port_train_history.csv
+├── llm_sequential_power_train_history.csv
 ├── proposed.pt
 ├── proposed_train_history.csv
 ├── train_history.csv

@@ -34,6 +34,7 @@
 | 功率输出 | sigmoid 后 row-wise softmax，并按 `Pmax` 归一化 |
 | Beamforming | 论文 Eq.18 对应的 model-based optimal beamforming structure |
 | 训练目标 | 无监督最大化 sum-rate，即最小化 `-sum_rate` |
+| Sequential baselines | CNN / LLM-sequential 两阶段训练：先训练端口选择器，再冻结端口选择器并训练功率分配器 |
 
 支持方法：
 
@@ -163,3 +164,4 @@ outputs/paper_aligned_5seed_5methods/
 - `outputs/` 中包含大量实验产物，重新训练前不要随意删除旧目录。
 - checkpoint 文件通常较大，不建议提交到 Git。
 - 论文未公开部分 baseline 的全部工程细节，当前实现对公开内容做了 paper-aligned 对齐，对未公开细节采用合理补全。
+- Sequential baseline 与 Random 采样语义修复后，旧 `outputs/` 中的同名结果仍是历史产物；正式对比请重新训练相关实验。

@@ -114,6 +114,49 @@ def test_train_method_writes_transformer_checkpoint_and_history(tmp_path):
     assert math.isfinite(float(rows[0]["val_loss"]))
 
 
+def test_train_method_writes_cnn_two_stage_artifacts(tmp_path):
+    cfg = _tiny_cfg(tmp_path)
+
+    checkpoint_path = train_method(cfg, method="cnn")
+    output_dir = Path(cfg.train.output_dir)
+
+    assert checkpoint_path == output_dir / "cnn.pt"
+    assert checkpoint_path.exists()
+    assert (output_dir / "cnn_port_selector.pt").exists()
+    for name in [
+        "cnn_port_train_history.csv",
+        "cnn_power_train_history.csv",
+        "cnn_train_history.csv",
+    ]:
+        rows = list(csv.DictReader((output_dir / name).open(newline="")))
+        assert rows
+        assert rows[0].keys() == {"epoch", "train_loss", "val_loss"}
+        assert math.isfinite(float(rows[0]["train_loss"]))
+        assert math.isfinite(float(rows[0]["val_loss"]))
+
+
+def test_train_method_writes_llm_sequential_two_stage_artifacts(monkeypatch, tmp_path):
+    monkeypatch.setattr("llm_fas.models.GPT2Model.from_pretrained", _tiny_gpt2)
+    cfg = _tiny_cfg(tmp_path)
+
+    checkpoint_path = train_method(cfg, method="llm_sequential")
+    output_dir = Path(cfg.train.output_dir)
+
+    assert checkpoint_path == output_dir / "llm_sequential.pt"
+    assert checkpoint_path.exists()
+    assert (output_dir / "llm_sequential_port_selector.pt").exists()
+    for name in [
+        "llm_sequential_port_train_history.csv",
+        "llm_sequential_power_train_history.csv",
+        "llm_sequential_train_history.csv",
+    ]:
+        rows = list(csv.DictReader((output_dir / name).open(newline="")))
+        assert rows
+        assert rows[0].keys() == {"epoch", "train_loss", "val_loss"}
+        assert math.isfinite(float(rows[0]["train_loss"]))
+        assert math.isfinite(float(rows[0]["val_loss"]))
+
+
 def test_train_method_saves_checkpoint_each_time_validation_improves(monkeypatch, tmp_path):
     base_cfg = _tiny_cfg(tmp_path)
     cfg = replace(base_cfg, train=replace(base_cfg.train, epochs=2))

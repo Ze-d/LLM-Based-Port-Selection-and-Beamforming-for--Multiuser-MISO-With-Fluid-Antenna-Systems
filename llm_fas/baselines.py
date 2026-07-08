@@ -14,9 +14,7 @@ def _random_port_selection(
     B: int, N: int, n_active: int, device: torch.device, seed: int | None = None
 ) -> torch.Tensor:
     """Generate random port indices (uniform without replacement)."""
-    generator = torch.Generator(device="cpu")
-    if seed is not None:
-        generator = generator.manual_seed(seed)
+    generator = torch.Generator(device="cpu").manual_seed(seed) if seed is not None else None
     sampled = [torch.randperm(N, generator=generator)[:n_active] for _ in range(B)]
     return torch.stack(sampled, dim=0).to(device)
 
